@@ -11,8 +11,12 @@ use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const PROTOCOL: u16 = 1;
-const BUILD: &str = "0.3.0-lan";
+const BUILD: &str = "0.3.1-lan";
 const LIMIT: usize = 1_048_576;
+// First-use shader compilation and scene loading can stall the engine thread.
+// Leave enough time for those stalls; explicit ENet disconnects remain immediate.
+const MEMBER_TIMEOUT: Duration = Duration::from_secs(30);
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(45);
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Member {
@@ -328,6 +332,7 @@ impl INode for LanSession {
                 .and_then(|p| p.try_call("get_connection_status", &[]).ok())
                 .and_then(|v| v.try_to::<i64>().ok());
             if status == Some(self.connected) && !self.hello_sent {
+                self.configure_peer_timeout(1);
                 self.local_id = self
                     .peer
                     .as_mut()
@@ -345,8 +350,7 @@ impl INode for LanSession {
                 );
             }
             if (self.hello_sent && status == Some(self.disconnected))
-                || (self.room.is_none()
-                    && self.connecting_since.elapsed() > Duration::from_secs(10))
+                || (self.room.is_none() && self.connecting_since.elapsed() > CONNECT_TIMEOUT)
             {
                 self.close_peer();
                 self.event("disconnected", 0, "连接已断开或超时");
@@ -360,7 +364,7 @@ impl INode for LanSession {
             let expired: Vec<u32> = self
                 .last_seen
                 .iter()
-                .filter(|(_, t)| t.elapsed() > Duration::from_secs(6))
+                .filter(|(_, t)| t.elapsed() > MEMBER_TIMEOUT)
                 .map(|(id, _)| *id)
                 .collect();
             for id in expired {
@@ -374,6 +378,21 @@ impl INode for LanSession {
 }
 
 impl LanSession {
+    fn configure_peer_timeout(&mut self, id: u32) {
+        if let Some(peer) = self.peer.as_mut()
+            && let Ok(value) = peer.try_call("get_peer", &[id.to_variant()])
+            && let Ok(mut remote) = value.try_to::<Gd<Object>>()
+        {
+            let _ = remote.try_call(
+                "set_timeout",
+                &[
+                    32i64.to_variant(),
+                    30_000i64.to_variant(),
+                    60_000i64.to_variant(),
+                ],
+            );
+        }
+    }
     fn event(&mut self, kind: &str, peer: u32, data: &str) {
         if self.events.len() < 2048 {
             self.events.push_back(Event {
@@ -470,10 +489,11 @@ impl LanSession {
             }
             match message {
                 Wire::Hello { build, name } => {
+                    self.configure_peer_timeout(sender);
                     if build != BUILD {
                         self.send(
                             sender,
-                            Wire::Reject("版本不匹配，请使用 LAN v0.3.0".into()),
+                            Wire::Reject("版本不匹配，请使用 LAN v0.3.1".into()),
                             true,
                         );
                         return;

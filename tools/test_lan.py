@@ -10,23 +10,27 @@ jobs = []
 RENDER = "--render" in sys.argv
 
 def launch(name, args):
-    process = subprocess.Popen(["godot", *([] if RENDER else ["--headless"]), "--path", str(ROOT), "--", *args], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    started = time.monotonic()
+    process = subprocess.Popen(["godot", *(["--resolution", "640x400", "--max-fps", "60"] if RENDER else ["--headless"]), "--path", str(ROOT), "--", *args], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     lines = []
     def reader():
         for line in process.stdout:
-            lines.append(line.rstrip())
+            lines.append(f"[{time.monotonic() - started:.2f}s] {line.rstrip()}")
     thread = threading.Thread(target=reader, daemon=True)
     thread.start()
     jobs.append((name, process, lines, thread))
+    return lines
 
 if __name__ == "__main__":
     full = "--four" in sys.argv
     scenario = "--scenario" in sys.argv
     extra = ["--scenario"] if scenario else []
     if RENDER: extra.append("--lan-photo")
-    launch("host", ["--lan-host", "--duration=33" if scenario else "--duration=24" if full else "--duration=12", *extra])
-    time.sleep(2)
-    launch("client-1", ["--lan-client", "--duration=30" if scenario else "--duration=20" if full else "--duration=9", *extra])
+    host_lines = launch("host", ["--lan-host", "--duration=45" if scenario else "--duration=40" if full else "--duration=45" if RENDER else "--duration=16", *extra])
+    deadline = time.monotonic() + 30
+    while not any("LAN_TEST STATE" in line for line in host_lines) and time.monotonic() < deadline:
+        time.sleep(0.1)
+    launch("client-1", ["--lan-client", "--duration=30" if scenario else "--duration=20" if full else "--duration=30" if RENDER else "--duration=9", *extra])
     if full:
         time.sleep(4)
         launch("hot-client-2", ["--lan-client", "--duration=16"])
@@ -37,7 +41,7 @@ if __name__ == "__main__":
     failed = False
     for name, process, lines, thread in jobs:
         try:
-            code = process.wait(timeout=60)
+            code = process.wait(timeout=120 if RENDER else 60)
         except subprocess.TimeoutExpired:
             process.kill()
             code = 1

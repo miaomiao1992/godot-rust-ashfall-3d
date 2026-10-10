@@ -413,6 +413,8 @@ func _build_avatar() -> void:
 	add_child(avatar)
 	avatar.rotation.y = PI
 	avatar.scale = Vector3.ONE * 1.06
+	for mesh in avatar.find_children("*", "MeshInstance3D", true, false):
+		mesh.custom_aabb = (mesh.global_transform.affine_inverse() * global_transform) * AABB(Vector3(-0.8, -0.2, -0.8), Vector3(1.6, 2.6, 1.6))
 	avatar.visible = not is_local
 	avatar_animation = avatar.find_child("AnimationPlayer", true, false)
 	var armor := Forge.material(Color(0.055, 0.22, 0.32), 0.5)

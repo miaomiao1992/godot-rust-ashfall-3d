@@ -1,6 +1,6 @@
 # ASHFALL · 余烬禁区
 
-Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.3.0 LAN 合作版**。
+Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.3.1 LAN 合作修复版**。
 当前开发分支：`feature/lan-coop`。`main` 为已发布的 v0.2.1 单机稳定版。
 完整挑战包括三个固定设计的关卡、九波尸潮、三个关底 Boss，以及成长解锁的五种武器。
 
@@ -13,8 +13,8 @@ Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.
 
 ## Windows 64 位游玩
 
-**下载局域网版：[Windows64 LAN v0.3.0 预发布版](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.3.0-lan)。**
-本地成品：`dist/ASHFALL-LAN-Windows64-v0.3.0.zip`。完整解压后运行 `ASHFALL-LAN.exe`。
+**下载局域网版：[Windows64 LAN v0.3.1 预发布版](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.3.1-lan)。**
+本地成品：`dist/ASHFALL-LAN-Windows64-v0.3.1.zip`。完整解压后运行 `ASHFALL-LAN.exe`。
 原单机稳定版：[Windows v0.2.1 Release](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.2.1)。
 
 1. 将 ZIP 完整解压到任意文件夹。
@@ -24,6 +24,11 @@ Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.
 运行环境：Windows 10 / 11 64 位，支持 OpenGL 3.3 的显卡，键盘和鼠标。
 
 ## 局域网合作
+
+### v0.3.1 怪物显示修复
+
+修复单人和联机场景中怪物身体消失、仅显示配件的问题。骨骼网格使用与实际身高一致的自定义渲染包围盒，并禁用兼容渲染器下不稳定的压缩、自动 LOD／阴影网格导入优化。
+新增实际帧图像对照回归：仅切换导入的骨骼身体可见性，防止头盔、标签和碰撞体使检查误通过；六类怪物在单人和 LAN 模式共 12 项检查通过。
 
 - 主菜单「局域网合作」：房间自动发现、创建房间、加入、IP 直连。
 - 最多四人，房主开始后可热加入。房主离开时返回大厅。
@@ -182,10 +187,13 @@ godot --path . -- --arena-regression
 godot --path . -- --visual-review
 python3 tools/test_lan.py --four
 python3 tools/test_lan.py --scenario
+python3 tools/test_lan.py --render
 godot --path . -- --lan-visual
+godot --path . --script res://tests/render_visibility.gd
+godot --path . --script res://tests/render_visibility.gd -- --probe-lan
 ```
 
-Rust 包含 9 项规则测试。Godot 的 88 项集成检查覆盖实际射线命中、全部武器、换弹、解锁、三关路径连通、成长保留、Boss 技能与狂暴、九波自动流程、死亡重启和通关，还验证关卡地面拓扑差异、真实坡道碰撞与丧尸爬坡、导航高差连续性、冷却阀操作／波次门槛、腐蚀伤害时序／固定落点／限量与防叠加。
+Rust 包含 18 项规则、合作和网络测试。Godot 的 88 项集成检查覆盖实际射线命中、全部武器、换弹、解锁、三关路径连通、成长保留、Boss 技能与狂暴、九波自动流程、死亡重启和通关，还验证关卡地面拓扑差异、真实坡道碰撞与丧尸爬坡、导航高差连续性、冷却阀操作／波次门槛、腐蚀伤害时序／固定落点／限量与防叠加。
 第三关另有 15 项专项回归：真实击退、跌落恢复与血量保留、四门六类怪物出生、活怪计数校正、失败出生配额重试，以及第一波 106 只实怪清理后进入第二波。
 视觉截图存于 `tests/previews/`，`01/02/03-layout.png` 为俯视布局，`05-acid-warning.png` 和 `06-acid-active.png` 为腐蚀阶段对照。
 

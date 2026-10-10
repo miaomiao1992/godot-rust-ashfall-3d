@@ -1,5 +1,9 @@
-ASHFALL · 余烬禁区 LAN v0.3.0 / Windows 64 位
+ASHFALL · 余烬禁区 LAN v0.3.1 / Windows 64 位
 开发分支：feature/lan-coop
+
+本版修复单人和联机中丧尸身体消失、只显示头盔或配件的问题。
+修正骨骼模型渲染包围盒，关闭不兼容的网格压缩、自动 LOD 和阴影网格优化。
+六类怪物在单人及 LAN 场景的实际身体渲染对照测试均通过。
 
 完整解压后双击 ASHFALL-LAN.exe，无需安装 Godot 或 Rust。
 同一局域网的所有玩家使用本版完整文件夹。

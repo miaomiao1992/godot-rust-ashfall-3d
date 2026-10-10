@@ -73,7 +73,7 @@ func _process(delta: float) -> void:
 		last_report = second
 		print("LAN_TEST STATE ", JSON.stringify({"host": is_host, "role": game.lan.net.role(), "enabled": game.lan.enabled, "tick": game.lan.last_tick, "epoch": game.lan.client_epoch, "state": game.state, "members": game.lan.members.size(), "players": game.lan.players.size(), "enemies": game.alive, "stage": game.stage_index, "wave": game.wave, "discovery": discovery_seen}))
 	if elapsed > duration:
-		var passed: bool = battle_started if is_host else (game.lan.net.role() == "offline" if expect_reject else joined_battle)
+		var passed: bool = battle_started if is_host else (game.lan.net.role() == "offline" if expect_reject else joined_battle and game.lan.enabled and game.lan.net.role() == "client" and game.lan.players.size() >= 2)
 		if scenario:
 			passed = passed and (revive_test and upgrade_test and stage_test and wipe_test and restart_test if is_host else saw_downed and saw_revived and saw_upgrade and saw_stage and saw_wipe and saw_restart)
 		print("LAN_TEST RESULT ", "PASS" if passed else "FAIL", " host=", is_host, " discovery=", discovery_seen)

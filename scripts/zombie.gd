@@ -106,6 +106,11 @@ func _build_model() -> void:
 	if kind == 4:
 		tint = [Color(0.94, 0.68, 0.5), Color(0.52, 0.87, 0.72), Color(0.94, 0.45, 0.42)][game.stage_index]
 	for mesh in actor.find_children("*", "MeshInstance3D", true, false):
+		# FBX/glTF rigs retain a centimetre-scale armature. Skinned vertices
+		# are human-sized but the imported static mesh bounds are only 1/100
+		# of that in world space. Provide bounds in the mesh's local frame.
+		var body_bounds := AABB(Vector3(-1.0, -0.25, -1.0), Vector3(2.0, 2.8, 2.0))
+		mesh.custom_aabb = (mesh.global_transform.affine_inverse() * model.global_transform) * body_bounds
 		for surface in mesh.mesh.get_surface_count():
 			var original: Material = mesh.mesh.surface_get_material(surface)
 			if original is StandardMaterial3D:
