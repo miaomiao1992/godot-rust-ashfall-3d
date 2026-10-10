@@ -10,7 +10,7 @@ DIST = ROOT / "dist"
 LAN = "--lan" in sys.argv
 FOLDER = DIST / ("ASHFALL-LAN-Windows64" if LAN else "ASHFALL-Windows64")
 EXECUTABLE = "ASHFALL-LAN" if LAN else "ASHFALL"
-ARCHIVE = "ASHFALL-LAN-Windows64-v0.3.1" if LAN else "ASHFALL-Windows64-v0.2.1"
+ARCHIVE = "ASHFALL-LAN-Windows64-v0.3.2" if LAN else "ASHFALL-Windows64-v0.2.1"
 
 if __name__ == "__main__":
     for name in [EXECUTABLE + ".exe", EXECUTABLE + ".pck", "ashfall_core.dll"]:

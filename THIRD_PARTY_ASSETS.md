@@ -20,6 +20,19 @@
 - Used as: `assets/models/horror_mutant.glb`.
 - Changes: authoring-control removal, packed albedo and normal maps resized to 2048px maximum, in-place skeletal clips, shortened walk segment for melee motion, GLB conversion; runtime body proportions, infection growths and coloration vary.
 
+## Soldier (rigged) / 幸存者士兵
+
+- Author / 作者: **Grab3D**
+- Source: https://grab3d.com/models/characters/soldier/
+- Download: https://grab3d.com/dl/soldier-rigged/soldier-rigged.glb
+- License: **CC0 1.0 Universal** — https://grab3d.com/license/
+- Original SHA256: `b1f32017868a6f951c21c45b84646696431e6b4c813d563af37944123f673a59`
+- Includes: independent humanoid skeleton, camouflage clothing, tactical vest, helmet, boots, albedo/normal textures, walk and run clips.
+- Used as: `assets/models/survivor_soldier.glb`, LAN player / teammate third-person appearance.
+- Changes: reduced from 278,969 to 27,896 triangles, textures limited to 2048px, added standing idle from a walk pose, GLB conversion with original skeleton and animations preserved.
+- Reproduction: `python3 tools/fetch_survivor.py`, then isolated Blender `--background --factory-startup --python tools/convert_survivor.py`.
+- Source reports AI-assisted model creation followed by Blender cleanup: https://grab3d.com/how-we-make-models/
+
 ## Godot Engine
 
 - Version: **4.7 stable**

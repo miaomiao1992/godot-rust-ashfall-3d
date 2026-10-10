@@ -1,6 +1,6 @@
 # ASHFALL · 余烬禁区
 
-Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.3.1 LAN 合作修复版**。
+Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.3.2 LAN 角色更新版**。
 当前开发分支：`feature/lan-coop`。`main` 为已发布的 v0.2.1 单机稳定版。
 完整挑战包括三个固定设计的关卡、九波尸潮、三个关底 Boss，以及成长解锁的五种武器。
 
@@ -13,8 +13,8 @@ Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.
 
 ## Windows 64 位游玩
 
-**下载局域网版：[Windows64 LAN v0.3.1 预发布版](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.3.1-lan)。**
-本地成品：`dist/ASHFALL-LAN-Windows64-v0.3.1.zip`。完整解压后运行 `ASHFALL-LAN.exe`。
+**下载局域网版：[Windows64 LAN v0.3.2 预发布版](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.3.2-lan)。**
+本地成品：`dist/ASHFALL-LAN-Windows64-v0.3.2.zip`。完整解压后运行 `ASHFALL-LAN.exe`。
 原单机稳定版：[Windows v0.2.1 Release](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.2.1)。
 
 1. 将 ZIP 完整解压到任意文件夹。
@@ -24,6 +24,13 @@ Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.
 运行环境：Windows 10 / 11 64 位，支持 OpenGL 3.3 的显卡，键盘和鼠标。
 
 ## 局域网合作
+
+### v0.3.2 独立幸存者角色
+
+玩家／队友使用下载的独立士兵模型：迷彩服、战术背心、头盔和军靴，不再复用丧尸身体。保留独立人形骨骼与走／跑动画，增加站立待机；模型优化为 27,896 个三角形，贴图最大 2048px。
+来源 [Grab3D Soldier](https://grab3d.com/models/characters/soldier/)，CC0 授权，下载与转换脚本及来源记录均在项目内。
+
+![独立幸存者：待机、行走、奔跑，与右侧丧尸对照](tests/previews/12-survivor-vs-zombie.png)
 
 ### v0.3.1 怪物显示修复
 
@@ -191,6 +198,7 @@ python3 tools/test_lan.py --render
 godot --path . -- --lan-visual
 godot --path . --script res://tests/render_visibility.gd
 godot --path . --script res://tests/render_visibility.gd -- --probe-lan
+godot --path . --script res://tests/survivor_visual.gd
 ```
 
 Rust 包含 18 项规则、合作和网络测试。Godot 的 88 项集成检查覆盖实际射线命中、全部武器、换弹、解锁、三关路径连通、成长保留、Boss 技能与狂暴、九波自动流程、死亡重启和通关，还验证关卡地面拓扑差异、真实坡道碰撞与丧尸爬坡、导航高差连续性、冷却阀操作／波次门槛、腐蚀伤害时序／固定落点／限量与防叠加。

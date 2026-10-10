@@ -11,7 +11,9 @@ func verify() -> void:
 	var extension := FileAccess.get_file_as_string("res://native/ashfall.gdextension")
 	print("PACKED EXTENSION CONFIG:\n", extension)
 	assert("ashfall_core.dll" in extension)
-	for path in ["res://assets/models/city_zombie.glb", "res://assets/models/horror_mutant.glb"]:
+	var models := ["res://assets/models/city_zombie.glb", "res://assets/models/horror_mutant.glb"]
+	if "--lan-pack" in OS.get_cmdline_user_args(): models.append("res://assets/models/survivor_soldier.glb")
+	for path in models:
 		var scene: PackedScene = load(path)
 		assert(scene != null, "Packed character scene must load")
 		var model := scene.instantiate()
@@ -19,7 +21,8 @@ func verify() -> void:
 		var players := model.find_children("*", "AnimationPlayer", true, false)
 		assert(not players.is_empty())
 		var player: AnimationPlayer = players[0]
-		assert(player.has_animation("walk") and player.has_animation("run") and player.has_animation("attack"))
+		assert(player.has_animation("walk") and player.has_animation("run"))
+		assert(player.has_animation("idle" if "survivor_soldier" in path else "attack"))
 		print("PACK VERIFIED: textured rig + animations / ", path)
 		model.queue_free()
 	var main: PackedScene = load("res://main.tscn")

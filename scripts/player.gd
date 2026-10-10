@@ -409,19 +409,18 @@ func play_gun_feedback() -> void:
 	game.fx.casing(muzzle.global_position, camera.global_basis.x)
 
 func _build_avatar() -> void:
-	avatar = preload("res://assets/models/city_zombie.glb").instantiate()
+	avatar = preload("res://assets/models/survivor_soldier.glb").instantiate()
+	avatar.name = "SurvivorAvatar"
 	add_child(avatar)
 	avatar.rotation.y = PI
-	avatar.scale = Vector3.ONE * 1.06
+	avatar.scale = Vector3.ONE
 	for mesh in avatar.find_children("*", "MeshInstance3D", true, false):
 		mesh.custom_aabb = (mesh.global_transform.affine_inverse() * global_transform) * AABB(Vector3(-0.8, -0.2, -0.8), Vector3(1.6, 2.6, 1.6))
 	avatar.visible = not is_local
 	avatar_animation = avatar.find_child("AnimationPlayer", true, false)
-	var armor := Forge.material(Color(0.055, 0.22, 0.32), 0.5)
-	Forge.box(avatar, Vector3(0, 1.3, 0.15), Vector3(0.52, 0.55, 0.18), armor)
-	Forge.sphere(avatar, Vector3(0, 1.76, 0), 0.18, armor).scale.y = 0.7
-	Forge.box(avatar, Vector3(0, 1.6, 0.18), Vector3(0.25, 0.21, 0.12), Forge.material(Color(0.04, 0.06, 0.07)))
-	Forge.box(avatar, Vector3(0.3, 1.12, 0.3), Vector3(0.1, 0.1, 0.6), Forge.material(Color(0.08, 0.1, 0.12), 0.7))
+	if avatar_animation and avatar_animation.has_animation("idle"):
+		avatar_animation.get_animation("idle").loop_mode = Animation.LOOP_LINEAR
+		avatar_animation.play("idle")
 	if not is_local:
 		var label := Forge.label(self, Vector3(0, 2.2, 0), player_name, Color(0.3, 0.92, 0.9), 32)
 		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
