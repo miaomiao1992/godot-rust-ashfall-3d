@@ -20,6 +20,7 @@ var menu_focus := Vector3(-12, 6, -8)
 var fall_threshold := 1.0
 var spatial_type := "folded_elevated_highway"
 var combat_hint := "折线高架 · 留意转弯及上下坡"
+var deck_regions: Array[Dictionary] = []
 
 func generate(index: int) -> void:
 	stage = index
@@ -43,8 +44,24 @@ func generate(index: int) -> void:
 	_bake_static_geometry()
 
 func _deck(rect: Rect2i, height: float, material: Material) -> void:
-	var center := Vector3(-58 + (rect.position.x + rect.size.x * 0.5) * CELL, height - 0.3, -58 + (rect.position.y + rect.size.y * 0.5) * CELL)
-	Forge.box(self, center, Vector3(rect.size.x * CELL, 0.6, rect.size.y * CELL), material, true)
+	# Adjacent authored platforms often overlap at junctions. Remove coplanar
+	# overlap before batching: two top faces otherwise fight in the depth buffer.
+	var pieces: Array[Rect2i] = [rect]
+	for previous in deck_regions:
+		if not is_equal_approx(height, float(previous.height)): continue
+		var remaining: Array[Rect2i] = []
+		for piece in pieces:
+			var overlap := piece.intersection(previous.rect)
+			if not overlap.has_area():
+				remaining.append(piece)
+				continue
+			for candidate in [Rect2i(piece.position, Vector2i(piece.size.x, overlap.position.y - piece.position.y)), Rect2i(Vector2i(piece.position.x, overlap.end.y), Vector2i(piece.size.x, piece.end.y - overlap.end.y)), Rect2i(Vector2i(piece.position.x, overlap.position.y), Vector2i(overlap.position.x - piece.position.x, overlap.size.y)), Rect2i(Vector2i(overlap.end.x, overlap.position.y), Vector2i(piece.end.x - overlap.end.x, overlap.size.y))]:
+				if candidate.has_area(): remaining.append(candidate)
+		pieces = remaining
+	for piece in pieces:
+		var center := Vector3(-58 + (piece.position.x + piece.size.x * 0.5) * CELL, height - 0.3, -58 + (piece.position.y + piece.size.y * 0.5) * CELL)
+		Forge.box(self, center, Vector3(piece.size.x * CELL, 0.6, piece.size.y * CELL), material, true)
+		deck_regions.append({"rect": piece, "height": height})
 	for x in range(rect.position.x, rect.end.x):
 		for z in range(rect.position.y, rect.end.y):
 			var cell := Vector2i(x, z)
@@ -81,7 +98,10 @@ func _highway() -> void:
 	_deck(Rect2i(5, 2, 16, 6), 8, asphalt)
 	for p in [Vector3(-8, 0, 28), Vector3(-8, 0, 12), Vector3(-28, 0, -2), Vector3(-28, 0, -36), Vector3(8, 0, -40)]:
 		var top := ground_point(p)
-		Forge.box(self, Vector3(p.x, top.y * 0.5 - 4, p.z), Vector3(2.7, top.y + 8, 3.2), concrete)
+		# Stop below the 0.6 m bridge slab. Flush concrete/asphalt top faces
+		# produced flickering rectangular patches and diagonal depth-fight lines.
+		var support_top := top.y - 0.62
+		Forge.box(self, Vector3(p.x, support_top * 0.5 - 4, p.z), Vector3(2.7, support_top + 8, 3.2), concrete)
 	for z in range(6, 50, 7):
 		Forge.box(self, Vector3(-5, 4.017, z), Vector3(0.16, 0.018, 3.0), Forge.material(Color(0.7, 0.61, 0.3)))
 	for x in range(-34, 26, 7):
@@ -125,10 +145,11 @@ func _docks() -> void:
 	menu_camera = Vector3(49, 21, 59)
 	menu_focus = Vector3(3, 0, -4)
 	fall_threshold = -1.0
-	var deck := Forge.material(Color(0.21, 0.27, 0.29), 0.2)
-	var steel := Forge.material(Color(0.2, 0.27, 0.28), 0.75)
-	var water := Forge.material(Color(0.025, 0.13, 0.19), 0.75)
-	water.roughness = 0.17
+	var deck := Forge.material(Color(0.21, 0.27, 0.29), 0.1, 0, 0.85)
+	var steel := Forge.material(Color(0.2, 0.27, 0.28), 0.65, 0, 0.72)
+	# Water is a rough dielectric, not polished metal. Broad point-light
+	# highlights on the huge water plane were overpowering the pier floor.
+	var water := Forge.material(Color(0.025, 0.13, 0.19), 0.0, 0, 0.48)
 	Forge.box(self, Vector3(0, -0.55, 0), Vector3(230, 0.03, 230), water)
 	for x in [4, 10, 16, 22]:
 		_deck(Rect2i(x, 2, 3, 24), 0, deck)
@@ -178,7 +199,7 @@ func _laboratory() -> void:
 	menu_camera = Vector3(38, 28, 43)
 	menu_focus = Vector3(0, 8, 0)
 	fall_threshold = -2.0
-	var floor_mat := Forge.material(Color(0.15, 0.16, 0.17), 0.55)
+	var floor_mat := Forge.material(Color(0.15, 0.16, 0.17), 0.35, 0, 0.78)
 	var steel := Forge.material(Color(0.13, 0.14, 0.16), 0.75)
 	var light_panel := Forge.material(Color(0.52, 0.56, 0.56), 0.3)
 	var base := Forge.cylinder(self, Vector3(0, -0.3, 0), 49, 0.6, floor_mat)

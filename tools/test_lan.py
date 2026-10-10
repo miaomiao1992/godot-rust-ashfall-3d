@@ -26,6 +26,8 @@ if __name__ == "__main__":
     scenario = "--scenario" in sys.argv
     extra = ["--scenario"] if scenario else []
     if RENDER: extra.append("--lan-photo")
+    map_args = [arg for arg in sys.argv[1:] if arg.startswith("--map=")]
+    extra.extend(map_args)
     host_lines = launch("host", ["--lan-host", "--duration=45" if scenario else "--duration=40" if full else "--duration=45" if RENDER else "--duration=16", *extra])
     deadline = time.monotonic() + 30
     while not any("LAN_TEST STATE" in line for line in host_lines) and time.monotonic() < deadline:
@@ -33,9 +35,9 @@ if __name__ == "__main__":
     launch("client-1", ["--lan-client", "--duration=30" if scenario else "--duration=20" if full else "--duration=30" if RENDER else "--duration=9", *extra])
     if full:
         time.sleep(4)
-        launch("hot-client-2", ["--lan-client", "--duration=16"])
+        launch("hot-client-2", ["--lan-client", "--duration=16", *map_args])
         time.sleep(2)
-        launch("hot-client-3", ["--lan-client", "--duration=14"])
+        launch("hot-client-3", ["--lan-client", "--duration=14", *map_args])
         time.sleep(2)
         launch("full-rejection", ["--lan-client", "--duration=5", "--expect-full"])
     failed = False

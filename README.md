@@ -1,6 +1,6 @@
 # ASHFALL · 余烬禁区
 
-Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.3.1 LAN 合作修复版**。
+Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.3.4 LAN 选图与表现修复版**。
 当前开发分支：`feature/lan-coop`。`main` 为已发布的 v0.2.1 单机稳定版。
 完整挑战包括三个固定设计的关卡、九波尸潮、三个关底 Boss，以及成长解锁的五种武器。
 
@@ -13,8 +13,8 @@ Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.
 
 ## Windows 64 位游玩
 
-**下载局域网版：[Windows64 LAN v0.3.1 预发布版](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.3.1-lan)。**
-本地成品：`dist/ASHFALL-LAN-Windows64-v0.3.1.zip`。完整解压后运行 `ASHFALL-LAN.exe`。
+**下载局域网版：[Windows64 LAN v0.3.4 预发布版](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.3.4-lan)。**
+本地修复版：`dist/ASHFALL-LAN-Windows64-v0.3.4.zip`。完整解压后运行 `ASHFALL-LAN.exe`。
 原单机稳定版：[Windows v0.2.1 Release](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.2.1)。
 
 1. 将 ZIP 完整解压到任意文件夹。
@@ -24,6 +24,34 @@ Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.
 运行环境：Windows 10 / 11 64 位，支持 OpenGL 3.3 的显卡，键盘和鼠标。
 
 ## 局域网合作
+
+### v0.3.4 起始地图与战斗表现
+
+- 创建房间后，房主可在大厅选择起始地图，默认「断桥高架」。客户端同步所选关卡；重开保留本房间选图，新房间恢复默认。所选地图从自己的第一波开始，之后继续后续关卡。
+- 第一关桥墩不再延伸到路面高度，修复俯视图中的矩形亮块和视角变化时的跳动亮线。
+- 普通武器使用最长 1.2 米的快速移动曳光，电磁炮和 Boss 冲锋预警保留光束；射程和伤害判定不变。
+- 尸体会落到真实碰撞地面，死亡姿态完成后按变形网格底部贴地，适配高架、高低码头、实验场与坡道。血迹沿地面高度和法线铺放。
+- 新增桥面几何／闪烁、六类尸体落地、地图选择／重开回归，以及真正房主和客户端的非默认选图测试。
+
+| 房主大厅选图 | 队友射击与短曳光 |
+|---|---|
+| ![房主大厅选图](tests/previews/19-lobby-map-choice.png) | ![队友射击与短曳光](tests/previews/14-teammate-shot.png) |
+
+### v0.3.3 射击表现、地面与性能修复
+
+- 队友显示五种武器，骨骼手臂跟随枪握点；同步瞄准俯仰、射击后坐力、枪口闪光与弹道，电磁炮保持青色弹道。
+- 客户端本机立即预测弹道，伤害和命中提示仍由房主确认。低帧率下，新闪光与弹道至少显示一个渲染帧。
+- 移除高架和码头交叉平台的同高度重叠面，避免深度冲突闪烁；水道改为非金属材质，码头和实验场地面使用更高粗糙度。
+- 房主状态回填随 20 Hz 快照更新，战斗动作即时更新；每物理帧共享队友目标数组，弹道复用网格，碎屑限量并关闭微小特效阴影。
+- F3 增加 CPU／物理毫秒、绘制调用和特效数量。优化尚未量化两台 Windows 实机的帧率提升。
+- 新增射击／地面回归（包含实际武器与射击像素对照），双人流程及四人热加入检查队友开枪和俯仰同步。
+
+### v0.3.2 独立幸存者角色
+
+玩家／队友使用下载的独立士兵模型：迷彩服、战术背心、头盔和军靴，不再复用丧尸身体。保留独立人形骨骼与走／跑动画，增加站立待机；模型优化为 27,896 个三角形，贴图最大 2048px。
+来源 [Grab3D Soldier](https://grab3d.com/models/characters/soldier/)，CC0 授权，下载与转换脚本及来源记录均在项目内。
+
+![独立幸存者：待机、行走、奔跑，与右侧丧尸对照](tests/previews/12-survivor-vs-zombie.png)
 
 ### v0.3.1 怪物显示修复
 
@@ -191,6 +219,12 @@ python3 tools/test_lan.py --render
 godot --path . -- --lan-visual
 godot --path . --script res://tests/render_visibility.gd
 godot --path . --script res://tests/render_visibility.gd -- --probe-lan
+godot --path . --script res://tests/survivor_visual.gd
+godot --path . --script res://tests/combat_visual_regression.gd
+godot --path . --script res://tests/highway_surface_regression.gd
+godot --path . --script res://tests/corpse_ground_regression.gd
+godot --path . --script res://tests/lan_map_regression.gd
+python3 tools/test_lan.py --map=2
 ```
 
 Rust 包含 18 项规则、合作和网络测试。Godot 的 88 项集成检查覆盖实际射线命中、全部武器、换弹、解锁、三关路径连通、成长保留、Boss 技能与狂暴、九波自动流程、死亡重启和通关，还验证关卡地面拓扑差异、真实坡道碰撞与丧尸爬坡、导航高差连续性、冷却阀操作／波次门槛、腐蚀伤害时序／固定落点／限量与防叠加。

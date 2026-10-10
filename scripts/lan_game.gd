@@ -22,6 +22,10 @@ var nickname := "幸存者"
 var room_name := "余烬小队"
 var members: Array = []
 var ready_peers: Dictionary = {}
+var target_frame := -1
+var target_ids := PackedInt64Array()
+var target_positions: Array[Vector3] = []
+var start_stage := 0
 
 func _init(owner) -> void:
 	game = owner
@@ -46,6 +50,7 @@ func create_room(name: String, nick: String, port: int = 42042) -> void:
 		game.hud.toast(error, Color(1, 0.4, 0.2), 5)
 		return
 	enabled = true
+	start_stage = 0
 	nickname = nick
 	room_name = name
 	refresh_members()
@@ -58,6 +63,7 @@ func join_room(address: String, nick: String, port: int = 42042) -> void:
 		game.hud.toast(error, Color(1, 0.4, 0.2), 5)
 		return
 	enabled = true
+	start_stage = 0
 	nickname = nick
 	client_epoch = -1
 	last_tick = -1
@@ -75,6 +81,7 @@ func leave() -> void:
 	network_pickups.clear()
 
 func world_ready(local_player) -> void:
+	target_frame = -1
 	players.clear()
 	replicas.clear()
 	zones.clear()
@@ -111,7 +118,13 @@ func start_battle() -> void:
 	refresh_members()
 	epoch += 1
 	ready_peers.clear()
-	game.start_run()
+	game.start_run(start_stage)
+
+func set_start_stage(index: int) -> void:
+	if not host() or game.state != "lobby": return
+	start_stage = clampi(index, 0, game.STAGE_NAMES.size() - 1)
+	net.send_event("lobby_map", JSON.stringify({"stage": start_stage}))
+	net.update_room(start_stage, 0, false)
 
 func process(delta: float) -> void:
 	for event in net.drain_events():
@@ -162,6 +175,10 @@ func process(delta: float) -> void:
 			"shot":
 				if not host() and data is Dictionary:
 					show_shot(data)
+			"lobby_map":
+				if not host() and data is Dictionary and game.state in ["lobby", "connecting"]:
+					start_stage = clampi(int(data.get("stage", 0)), 0, game.STAGE_NAMES.size() - 1)
+					if game.state == "lobby": game.hud.show_lan_lobby()
 			"hurt":
 				if not host() and data is Dictionary and int(data.id) == local_id():
 					game.hud.hurt = 1
@@ -177,9 +194,9 @@ func process(delta: float) -> void:
 	if host():
 		if game.state == "playing":
 			game.core.coop_tick(delta)
-			sync_stats()
 			update_revives(delta)
 			if game.core.coop_wipe():
+				sync_stats()
 				game.state = "team_wipe"
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 				game.hud.show_death()
@@ -187,8 +204,9 @@ func process(delta: float) -> void:
 			snapshot_timer -= delta
 			if snapshot_timer <= 0:
 				snapshot_timer = 0.05
+				sync_stats()
 				net.send_snapshot(JSON.stringify(make_snapshot()), 0)
-		net.update_room(game.stage_index, game.wave, game.state == "playing")
+		net.update_room(start_stage if game.state == "lobby" else game.stage_index, 0 if game.state == "lobby" else game.wave, game.state == "playing")
 	else:
 		for id in players:
 			if id != local_id():
@@ -237,6 +255,8 @@ func request(kind: String, arg: int = 0, yaw: float = 0.0, pitch: float = 0.0) -
 
 func apply_action(id: int, action: Dictionary) -> void:
 	if action.kind == "ready":
+		if game.state == "lobby":
+			net.send_event("lobby_map", JSON.stringify({"stage": start_stage}))
 		if int(action.arg) == 1:
 			ready_peers[id] = true
 			game.core.coop_activate(id)
@@ -255,6 +275,7 @@ func apply_action(id: int, action: Dictionary) -> void:
 			p.rotation.y = action.yaw
 			p.camera.rotation.x = clampf(action.pitch, -1.5, 1.5)
 			p.aim_pitch = p.camera.rotation.x + p.recoil
+			p._update_weapon_pose()
 			p.fire(int(action.seq))
 		"reload":
 			game.core.coop_reload(id)
@@ -282,12 +303,15 @@ func active_players() -> Array:
 	return result
 
 func target_for_enemy(position: Vector3):
-	var ids := PackedInt64Array()
-	var positions: Array[Vector3] = []
-	for id in players:
-		ids.append(id)
-		positions.append(players[id].position)
-	return players.get(game.core.coop_target(ids, positions, position), null)
+	var frame := Engine.get_physics_frames()
+	if frame != target_frame:
+		target_frame = frame
+		target_ids.clear()
+		target_positions.clear()
+		for id in players:
+			target_ids.append(id)
+			target_positions.append(players[id].position)
+	return players.get(game.core.coop_target(target_ids, target_positions, position), null)
 
 func register_enemy(enemy) -> void:
 	enemy.net_id = next_id
@@ -310,11 +334,12 @@ func make_snapshot() -> Dictionary:
 	for item in game.pickups: pickups.append({"id": item.nid, "pos": vec(item.node.position), "kind": item.kind})
 	var valves: Array = []
 	for terminal in game.level.terminals: valves.append(terminal.activated)
-	return {"epoch": epoch, "tick": snapshot_tick, "stage": game.stage_index, "wave": game.wave, "state": game.state, "time": game.survival_time, "spawn_left": game.spawn_left, "alive": game.alive, "next_wave": game.next_wave, "level": game.level_number, "xp": game.xp, "xp_needed": game.xp_needed, "kills": game.kills, "headshots": game.headshots, "objective": game.objective_count, "valves": valves, "players": pawn_states, "enemies": enemies, "hazards": hazards, "pickups": pickups}
+	return {"epoch": epoch, "tick": snapshot_tick, "start_stage": start_stage, "stage": game.stage_index, "wave": game.wave, "state": game.state, "time": game.survival_time, "spawn_left": game.spawn_left, "alive": game.alive, "next_wave": game.next_wave, "level": game.level_number, "xp": game.xp, "xp_needed": game.xp_needed, "kills": game.kills, "headshots": game.headshots, "objective": game.objective_count, "valves": valves, "players": pawn_states, "enemies": enemies, "hazards": hazards, "pickups": pickups}
 
 func apply_snapshot(s: Dictionary) -> void:
 	if int(s.tick) <= last_tick and int(s.epoch) == client_epoch: return
 	last_tick = int(s.tick)
+	start_stage = clampi(int(s.get("start_stage", 0)), 0, game.STAGE_NAMES.size() - 1)
 	var rebuild: bool = client_epoch != int(s.epoch) or game.stage_index != int(s.stage)
 	if rebuild:
 		client_epoch = int(s.epoch)
@@ -343,6 +368,7 @@ func apply_snapshot(s: Dictionary) -> void:
 		var p = players[id]
 		p.network_position = unvec(data.pos)
 		p.network_yaw = data.yaw
+		if id != local_id(): p.aim_pitch = float(data.pitch)
 		p.velocity = unvec(data.vel)
 		stats[id] = data.stats
 		p.apply_coop_stats(data.stats)
@@ -429,11 +455,19 @@ func show_shot(data: Dictionary) -> void:
 				game.hud.confirm_hit(data.head, data.killed)
 				game.sound.play("headshot" if data.head else "hit", -8)
 		return
+	var start := unvec(data.pos)
 	if players.has(int(data.owner)):
 		var p = players[int(data.owner)]
-		p.flash_timer = 0.05
-	game.sound.positional(game.player.WEAPONS[int(data.weapon)].sound, unvec(data.pos), -12)
-	for line in data.traces: game.fx.tracer(unvec(data.pos), unvec(line))
+		var weapon := int(data.weapon)
+		if p.weapon_index != weapon:
+			p.weapon_index = weapon
+			p._build_weapon()
+		p.play_gun_feedback()
+		start = p.muzzle.global_position
+	else:
+		game.sound.positional(game.player.WEAPONS[int(data.weapon)].sound, unvec(data.pos), -12)
+	var color := Color(0.15, 0.85, 1) if int(data.weapon) == 4 else Color(1, 0.64, 0.24)
+	for line in data.traces: game.fx.tracer(start, unvec(line), color, int(data.weapon) == 4)
 
 static func vec(v: Vector3) -> Array:
 	return [snappedf(v.x, 0.001), snappedf(v.y, 0.001), snappedf(v.z, 0.001)]
