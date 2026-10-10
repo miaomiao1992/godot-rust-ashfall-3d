@@ -39,6 +39,7 @@ var pickups: Array[Dictionary] = []
 var menu_time := 0.0
 var rng := RandomNumberGenerator.new()
 var ambience: WorldEnvironment
+var key_light: DirectionalLight3D
 var debug_stats := false
 var core
 var stage_index := 0
@@ -104,32 +105,28 @@ func _setup_environment() -> void:
 	ambience = WorldEnvironment.new()
 	var env := Environment.new()
 	var sky := Sky.new()
-	var sky_material := ProceduralSkyMaterial.new()
-	sky_material.sky_top_color = Color(0.025, 0.075, 0.1)
-	sky_material.sky_horizon_color = Color(0.2, 0.28, 0.29)
-	sky_material.ground_bottom_color = Color(0.03, 0.055, 0.065)
-	sky_material.ground_horizon_color = Color(0.17, 0.24, 0.26)
-	sky_material.sun_angle_max = 3
+	var sky_material := PanoramaSkyMaterial.new()
+	sky_material.panorama = load("res://assets/skies/highway_dusk.png")
 	sky.sky_material = sky_material
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
 	env.ambient_light_color = Color(0.43, 0.61, 0.66)
-	env.ambient_light_energy = 0.55
+	env.ambient_light_energy = 0.60
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.fog_enabled = true
 	env.fog_light_color = Color(0.12, 0.22, 0.25)
 	env.fog_light_energy = 0.7
 	env.fog_density = 0.009
+	env.fog_sky_affect = 0.18
 	ambience.environment = env
 	add_child(ambience)
-	var moon := DirectionalLight3D.new()
-	moon.rotation_degrees = Vector3(-48, -30, 0)
-	moon.light_color = Color(0.58, 0.76, 0.85)
-	moon.light_energy = 0.85
-	moon.shadow_enabled = true
-	moon.directional_shadow_max_distance = 65
-	add_child(moon)
+	key_light = DirectionalLight3D.new()
+	key_light.shadow_enabled = true
+	key_light.shadow_bias = 0.09
+	key_light.shadow_normal_bias = 0.75
+	key_light.directional_shadow_max_distance = 72
+	add_child(key_light)
 
 func _build_run() -> void:
 	if is_instance_valid(world):
@@ -512,13 +509,25 @@ func _change_stage(index: int) -> void:
 
 func _style_environment() -> void:
 	var env := ambience.environment
-	var sky_mat: ProceduralSkyMaterial = env.sky.sky_material
-	var colors := [Color(0.12, 0.22, 0.25), Color(0.055, 0.17, 0.24), Color(0.25, 0.06, 0.04)]
+	var colors := [Color(0.30, 0.29, 0.27), Color(0.19, 0.25, 0.29), Color(0.25, 0.06, 0.04)]
 	env.fog_light_color = colors[stage_index]
-	env.fog_density = [0.009, 0.014, 0.011][stage_index]
-	sky_mat.sky_top_color = colors[stage_index] * 0.3
-	sky_mat.sky_horizon_color = colors[stage_index] * 1.35
-	env.ambient_light_color = [Color(0.43, 0.61, 0.66), Color(0.3, 0.57, 0.7), Color(0.7, 0.36, 0.28)][stage_index]
+	env.fog_density = [0.0038, 0.0048, 0.011][stage_index]
+	env.ambient_light_color = [Color(0.58, 0.61, 0.67), Color(0.51, 0.61, 0.69), Color(0.7, 0.36, 0.28)][stage_index]
+	env.ambient_light_energy = [0.65, 0.65, 0.55][stage_index]
+	if stage_index < 2:
+		var panorama := PanoramaSkyMaterial.new()
+		panorama.panorama = load("res://assets/skies/highway_dusk.png" if stage_index == 0 else "res://assets/skies/harbor_overcast.png")
+		env.sky.sky_material = panorama
+		env.background_energy_multiplier = 0.9
+	else:
+		var interior := ProceduralSkyMaterial.new()
+		interior.sky_top_color = colors[stage_index] * 0.3
+		interior.sky_horizon_color = colors[stage_index] * 1.35
+		env.sky.sky_material = interior
+		env.background_energy_multiplier = 0.6
+	key_light.rotation_degrees = [Vector3(-21, -54, 0), Vector3(-37, -28, 0), Vector3(-48, -30, 0)][stage_index]
+	key_light.light_color = [Color(1.0, 0.79, 0.58), Color(0.70, 0.81, 0.89), Color(0.58, 0.76, 0.85)][stage_index]
+	key_light.light_energy = [0.95, 0.78, 0.85][stage_index]
 
 func _spawn_add(pos: Vector3, kind: int):
 	if alive >= 100:

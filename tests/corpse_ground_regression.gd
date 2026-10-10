@@ -44,7 +44,7 @@ func run() -> void:
 		game._change_stage(stage)
 		await physics_frame
 		var center: Vector3 = [Vector3(-7, 0, 32), Vector3(-12, 0, 33), Vector3(0, 0, 28), Vector3(-29, 0, -18)][test_case]
-		var longest := 0.5
+		var longest := 3.25
 		for kind in 6:
 			var enemy = game.ZombieScript.new()
 			enemy.game = game
@@ -63,11 +63,14 @@ func run() -> void:
 			if item.get("corpse", false):
 				if DisplayServer.get_name() != "headless":
 					var clearance := actual_clearance(item.model, item.ground)
-					check(item.settled and clearance >= -0.01 and clearance < 0.07, "case %d corpse %d lies on rendered ground (%.3f m)" % [test_case, corpses, clearance])
+					var on_ground: bool = item.settled and clearance >= -0.01 and clearance < 0.07
+					var detail := ""
+					if not on_ground: detail = " (root %s, ground %s, offset %s)" % [item.node.global_position, item.ground.position, item.node.correction]
+					check(on_ground, "case %d corpse %d lies on rendered ground (%.3f m)%s" % [test_case, corpses, clearance, detail])
 				else:
 					check(item.settled and item.node.global_position.is_finite(), "server corpse settled in case %d" % test_case)
 				corpses += 1
-			elif item.node is MeshInstance3D and item.node.mesh is CylinderMesh:
+			elif item.get("blood", false):
 				var ground: Vector3 = game.level.ground_point(item.node.global_position)
 				blood_on_floor = blood_on_floor and absf(item.node.global_position.y - ground.y) < 0.04
 		check(corpses == 6, "six corpse models retained in case %d" % test_case)

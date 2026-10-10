@@ -88,7 +88,8 @@ func _block(rect: Rect2i) -> void:
 	grid.fill_solid_region(rect)
 
 func _highway() -> void:
-	var asphalt := Forge.material(Color(0.13, 0.15, 0.16))
+	var asphalt := ShaderMaterial.new()
+	asphalt.shader = preload("res://shaders/asphalt.gdshader")
 	var concrete := Forge.material(Color(0.33, 0.34, 0.32))
 	# A folded, suspended route: south apron -> western elbow -> uphill -> north span.
 	_deck(Rect2i(11, 22, 7, 6), 4, asphalt)
@@ -135,6 +136,8 @@ func _highway() -> void:
 		var p := Vector3(sin(a), 0, cos(a)) * 69
 		var h := 12 + (i % 5) * 4
 		Forge.box(self, p + Vector3(0, h * 0.5 - 12, 0), Vector3(10, h, 12), Forge.material(Color(0.1, 0.16, 0.19)))
+		_city_facade(p, h, i)
+	_highway_detail(concrete)
 	spawn_points = [ground_point(Vector3(0, 0, 26)), ground_point(Vector3(-30, 0, 0)), ground_point(Vector3(-30, 0, -44)), ground_point(Vector3(20, 0, -42))]
 
 func _docks() -> void:
@@ -149,8 +152,9 @@ func _docks() -> void:
 	var steel := Forge.material(Color(0.2, 0.27, 0.28), 0.65, 0, 0.72)
 	# Water is a rough dielectric, not polished metal. Broad point-light
 	# highlights on the huge water plane were overpowering the pier floor.
-	var water := Forge.material(Color(0.025, 0.13, 0.19), 0.0, 0, 0.48)
-	Forge.box(self, Vector3(0, -0.55, 0), Vector3(230, 0.03, 230), water)
+	var water := ShaderMaterial.new()
+	water.shader = preload("res://shaders/harbor_water.gdshader")
+	Forge.box(self, Vector3(0, -0.55, 0), Vector3(1600, 0.03, 1600), water).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	for x in [4, 10, 16, 22]:
 		_deck(Rect2i(x, 2, 3, 24), 0, deck)
 	_deck(Rect2i(1, 15, 27, 2), 0, deck)
@@ -181,7 +185,7 @@ func _docks() -> void:
 		Forge.box(self, Vector3(x, 22, -17), Vector3(1.5, 1.5, 31), crane_mat)
 		Forge.cylinder(self, Vector3(x, 16, -9), 0.045, 12, steel)
 		Forge.box(self, Vector3(x, 9.8, -9), Vector3(0.6, 0.45, 0.6), crane_mat)
-	Forge.box(self, Vector3(-63, 1.5, -10), Vector3(15, 4.5, 60), Forge.material(Color(0.09, 0.15, 0.2), 0.55))
+	_ship_hull(Vector3(-63, 0, -10), Forge.material(Color(0.085, 0.12, 0.14), 0.45, 0, 0.75))
 	Forge.box(self, Vector3(-63, 5.7, 9), Vector3(12, 6.2, 14), Forge.material(Color(0.38, 0.42, 0.39)))
 	Forge.box(self, Vector3(-63, 10, 9), Vector3(10, 2, 10), Forge.material(Color(0.075, 0.16, 0.18), 0.7))
 	for x in [-19.0, 5.0, 29.0]:
@@ -189,6 +193,7 @@ func _docks() -> void:
 			Forge.box(self, Vector3(x, -0.5, z), Vector3(7, 0.01, 0.07), Forge.material(Color(0.09, 0.24, 0.28), 0.6))
 	Forge.label(self, Vector3(-8, 4.0, 39), "横桥换线 ← → CROSS DOCK", Color(0.53, 0.86, 0.87), 42)
 	spawn_points = [ground_point(Vector3(-36, 0, -46)), ground_point(Vector3(-12, 0, -46)), ground_point(Vector3(12, 0, -46)), ground_point(Vector3(36, 0, -46))]
+	_harbor_detail(crane_mat)
 	_weather(false)
 
 func _laboratory() -> void:
@@ -316,6 +321,11 @@ func _container(rect: Rect2i) -> void:
 		for z in rect.size.y * 3:
 			for side in [-1, 1]:
 				Forge.box(self, center + Vector3(side * (rect.size.x * 2 - 0.1), 1.5 + layer * 2.9, -rect.size.y * 2 + 0.6 + z * 1.3), Vector3(0.08, 2.5, 0.08), Forge.material(color.darkened(0.35), 0.6))
+		var door := Forge.material(color.darkened(0.35), 0.4, 0, 0.78)
+		for side in [-1, 1]:
+			var x: float = side * rect.size.x * 0.85
+			Forge.box(self, center + Vector3(x, 1.45 + layer * 2.9, rect.size.y * 2 - 0.09), Vector3(rect.size.x * 1.6, 2.48, 0.035), door)
+			Forge.cylinder(self, center + Vector3(x, 1.45 + layer * 2.9, rect.size.y * 2 - 0.04), 0.033, 2.25, Forge.material(Color(0.45, 0.45, 0.38), 0.7, 0, 0.65))
 	_block(rect)
 	Forge.label(self, center + Vector3(0, 1.8, rect.size.y * 2), "CARGO / %02d" % rect.position.y, Color(0.73, 0.83, 0.8), 40).pixel_size = 0.007
 
@@ -329,7 +339,103 @@ func _car(cell: Vector2i, burned: bool) -> void:
 	for x in [-0.89, 0.89]:
 		for z in [-1, 1]:
 			Forge.cylinder(root, Vector3(x, 0.4, z), 0.35, 0.18, Forge.material(Color(0.045, 0.05, 0.05))).rotation.z = PI / 2
+			var rim := Forge.cylinder(root, Vector3(x * 1.10, 0.4, z), 0.17, 0.035, Forge.material(Color(0.20, 0.21, 0.20), 0.55, 0, 0.7))
+			rim.rotation.z = PI / 2
+	var trim := Forge.material(Color(0.06, 0.065, 0.065), 0.2)
+	for z in [-1.62, 1.62]:
+		Forge.box(root, Vector3(0, 0.55, z), Vector3(1.68, 0.16, 0.075), trim)
+		for x in [-0.58, 0.58]:
+			Forge.box(root, Vector3(x, 0.80, z), Vector3(0.28, 0.11, 0.055), Forge.material(Color(0.30, 0.27, 0.17) if burned else Color(0.61, 0.57, 0.40), 0, 0.18))
+	for side in [-1, 1]:
+		Forge.box(root, Vector3(side * 0.76, 1.18, 0.2), Vector3(0.025, 0.37, 1.2), Forge.material(Color(0.10, 0.17, 0.19), 0.15, 0, 0.35))
+		Forge.box(root, Vector3(side * 0.79, 1.15, 0.25), Vector3(0.04, 0.65, 0.055), metal)
+		Forge.box(root, Vector3(side * 0.9, 0.77, 0.12), Vector3(0.045, 0.04, 0.22), trim)
 	_block(Rect2i(cell, Vector2i.ONE))
+
+func _beam(a: Vector3, b: Vector3, thickness: float, material: Material) -> void:
+	var beam := Forge.box(self, (a + b) * 0.5, Vector3(thickness, thickness, a.distance_to(b)), material)
+	beam.look_at(b)
+
+func _city_facade(p: Vector3, height: float, index: int) -> void:
+	var frame := Forge.material(Color(0.12, 0.135, 0.15), 0.2)
+	var glass := Forge.material(Color(0.16, 0.24, 0.29), 0.25, 0, 0.7)
+	var lit := Forge.material(Color(0.58, 0.39, 0.19), 0, 0.20)
+	for y in range(-7, int(height - 13), 4):
+		for x in [-3.4, -1.2, 1.2, 3.4]:
+			for side in [-1, 1]:
+				var window := Forge.box(self, p + Vector3(x, y, side * 6.015), Vector3(1.05, 1.65, 0.035), lit if (index + y + int(x * 3)) % 7 == 0 else glass)
+				window.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	Forge.box(self, p + Vector3(0, height - 11.6, 0), Vector3(10.6, 0.55, 12.6), frame)
+	Forge.box(self, p + Vector3(2, height - 10.7, 1), Vector3(2.5, 1.25, 3.0), frame)
+
+func _highway_detail(concrete: Material) -> void:
+	var rust := Forge.material(Color(0.25, 0.16, 0.095), 0.4, 0, 0.84)
+	var paint := Forge.material(Color(0.68, 0.46, 0.17), 0, 0, 0.91)
+	Forge.box(self, Vector3(0, -12.4, 0), Vector3(400, 0.4, 400), Forge.material(Color(0.07, 0.075, 0.08)))
+	for i in 18:
+		var angle := i * TAU / 18 + 0.08
+		var height := 28.0 + (i % 6) * 7.5
+		var p := Vector3(sin(angle) * 135, height * 0.5 - 12, cos(angle) * 135)
+		Forge.box(self, p, Vector3(10 + i % 4 * 3, height, 13), Forge.material(Color(0.105, 0.13, 0.145)))
+		Forge.box(self, p + Vector3(0, height * 0.5 + 1, 0), Vector3(7, 2, 9), Forge.material(Color(0.075, 0.09, 0.105)))
+	for z in [42.0, 38.0, 34.0]:
+		for side in [-1, 1]:
+			var mark := Forge.box(self, Vector3(side * 8.4, 4.034, z), Vector3(1.1, 0.014, 0.20), paint)
+			mark.rotation.y = side * 0.55
+	for x in [-25.0, 15.0]:
+		for i in 5:
+			var z := 11.0 + i * 1.65
+			_beam(Vector3(x, 13.45, z), Vector3(x + (2 if x < 0 else -2), 12.85, z + 0.45), 0.045, rust)
+	for pos in [Vector3(-13, 4, 36), Vector3(-33, 8, -34)]:
+		Forge.box(self, pos + Vector3(0, 0.16, 0), Vector3(0.65, 0.32, 0.75), concrete)
+		for i in 3:
+			var slab := Forge.box(self, pos + Vector3(i * 0.30, 0.08, 0.45 + i * 0.22), Vector3(0.35, 0.12, 0.55), concrete)
+			slab.rotation.y = i * 0.7
+
+func _ship_hull(center: Vector3, material: Material) -> void:
+	var tool := SurfaceTool.new()
+	tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var rings: Array = []
+	for section in [Vector2(-30, 1.8), Vector2(-22, 7.5), Vector2(20, 7.5), Vector2(30, 0.45)]:
+		rings.append([center + Vector3(-section.y, 3.8, section.x), center + Vector3(section.y, 3.8, section.x), center + Vector3(section.y * 0.62, -0.8, section.x), center + Vector3(-section.y * 0.62, -0.8, section.x)])
+	for i in range(rings.size() - 1):
+		for face in 4:
+			var next := (face + 1) % 4
+			for vertex in [rings[i][face], rings[i + 1][face], rings[i + 1][next], rings[i][face], rings[i + 1][next], rings[i][next]]:
+				tool.add_vertex(vertex)
+	tool.generate_normals()
+	var visual := MeshInstance3D.new()
+	visual.mesh = tool.commit()
+	visual.material_override = material
+	add_child(visual)
+
+func _harbor_detail(crane_material: Material) -> void:
+	var rubber := Forge.material(Color(0.035, 0.04, 0.04), 0, 0, 0.92)
+	var rust := Forge.material(Color(0.29, 0.18, 0.10), 0.45, 0, 0.83)
+	var rail := Forge.material(Color(0.40, 0.40, 0.34), 0.5, 0, 0.7)
+	for x in [-36.0, -12.0, 12.0, 36.0]:
+		for z in [-38.0, -24.0, 3.0, 24.0, 42.0]:
+			for side in [-1, 1]:
+				var p := ground_point(Vector3(x + side * 5.3, 0, z))
+				Forge.cylinder(self, p + Vector3.UP * 0.28, 0.18, 0.56, rust)
+				Forge.box(self, p + Vector3.UP * 0.57, Vector3(0.65, 0.09, 0.22), rail)
+				var fender := Forge.cylinder(self, p + Vector3(side * 0.55, -0.37, 0), 0.43, 0.19, rubber)
+				fender.rotation.z = PI / 2
+	for x in [-32.0, 40.0]:
+		for y in [3.0, 9.0, 15.0]:
+			_beam(Vector3(x - 7, y, -30), Vector3(x + 7, y + 6, -30), 0.19, crane_material)
+			_beam(Vector3(x + 7, y, -30), Vector3(x - 7, y + 6, -30), 0.19, crane_material)
+		Forge.box(self, Vector3(x, 21, -27), Vector3(3.5, 2.6, 3.5), crane_material)
+		Forge.box(self, Vector3(x, 21.3, -25.2), Vector3(2.8, 1.4, 0.08), Forge.material(Color(0.065, 0.13, 0.16), 0.2, 0, 0.35))
+	for x in [-84.0, 70.0, 98.0]:
+		Forge.box(self, Vector3(x, 7, -74), Vector3(23, 14, 32), Forge.material(Color(0.20, 0.23, 0.23), 0.2, 0, 0.87))
+		Forge.box(self, Vector3(x, 14.6, -74), Vector3(25, 1.2, 34), Forge.material(Color(0.12, 0.15, 0.16), 0.45, 0, 0.8))
+	for z in range(-27, 15, 6):
+		for side in [-1, 1]:
+			Forge.cylinder(self, Vector3(-63 + side * 7.2, 4.5, z), 0.045, 1.4, rail)
+			Forge.box(self, Vector3(-63 + side * 7.2, 5.15, z), Vector3(0.06, 0.06, 6), rail)
+	Forge.box(self, Vector3(-70.4, 2.65, -12), Vector3(0.045, 0.27, 39), Forge.material(Color(0.46, 0.23, 0.11), 0.3))
+	Forge.label(self, Vector3(-62.9, 7.8, 16.1), "C I N D E R  /  0 7", Color(0.63, 0.65, 0.56), 48).pixel_size = 0.012
 
 func _lamp(pos: Vector3, color: Color, height: float) -> void:
 	Forge.cylinder(self, pos + Vector3.UP * height * 0.5, 0.07, height, Forge.material(Color(0.14, 0.18, 0.19), 0.7))
@@ -368,9 +474,9 @@ func _torus(pos: Vector3, radius: float, thickness: float, material: Material) -
 
 func _weather(ash: bool) -> void:
 	var mesh := BoxMesh.new()
-	mesh.size = Vector3(0.03, 0.07, 0.03) if ash else Vector3(0.012, 0.75, 0.012)
+	mesh.size = Vector3(0.03, 0.07, 0.03) if ash else Vector3(0.008, 0.38, 0.008)
 	var shader := Shader.new()
-	shader.code = "shader_type spatial; render_mode unshaded, cull_disabled; void vertex(){ VERTEX.y -= mod(TIME * " + ("1.8" if ash else "18.0") + " + float(INSTANCE_ID) * 0.13, 26.0); } void fragment(){ ALBEDO = vec3(" + ("0.7,0.25,0.08" if ash else "0.25,0.43,0.5") + "); }"
+	shader.code = "shader_type spatial; render_mode unshaded, cull_disabled, depth_draw_never; void vertex(){ VERTEX.y -= mod(TIME * " + ("1.8" if ash else "18.0") + " + float(INSTANCE_ID) * 0.13, 26.0); } void fragment(){ ALBEDO = vec3(" + ("0.7,0.25,0.08" if ash else "0.47,0.57,0.62") + "); ALPHA = 0.28; }"
 	var mat := ShaderMaterial.new()
 	mat.shader = shader
 	var multi := MultiMesh.new()
@@ -394,20 +500,21 @@ func _bake_static_geometry() -> void:
 			continue
 		if visual.mesh == null or visual.material_override == null:
 			continue
-		var key: int = visual.material_override.get_instance_id()
+		var key := str(visual.material_override.get_instance_id()) + ":" + str(visual.cast_shadow)
 		if not batches.has(key):
 			var tool := SurfaceTool.new()
 			tool.begin(Mesh.PRIMITIVE_TRIANGLES)
 			tool.set_material(visual.material_override)
-			batches[key] = tool
-		batches[key].append_from(visual.mesh, 0, global_transform.affine_inverse() * visual.global_transform)
+			batches[key] = {"tool": tool, "shadow": visual.cast_shadow}
+		batches[key].tool.append_from(visual.mesh, 0, global_transform.affine_inverse() * visual.global_transform)
 		for child in visual.get_children():
 			if child is StaticBody3D:
 				child.reparent(self, true)
 		visual.queue_free()
 	for key in batches:
 		var visual := MeshInstance3D.new()
-		visual.mesh = batches[key].commit()
+		visual.mesh = batches[key].tool.commit()
+		visual.cast_shadow = batches[key].shadow
 		add_child(visual)
 
 func world_cell(pos: Vector3) -> Vector2i:
