@@ -3,13 +3,13 @@ extends RefCounted
 
 static var materials: Dictionary = {}
 
-static func material(color: Color, metallic: float = 0.0, glow: float = 0.0) -> StandardMaterial3D:
-	var key := str(color) + str(metallic) + str(glow)
+static func material(color: Color, metallic: float = 0.0, glow: float = 0.0, roughness: float = -1.0) -> StandardMaterial3D:
+	var key := str([color, metallic, glow, roughness])
 	if materials.has(key):
 		return materials[key]
 	var mat := StandardMaterial3D.new()
 	mat.albedo_color = color
-	mat.roughness = 0.83 if metallic == 0 else 0.44
+	mat.roughness = roughness if roughness >= 0 else (0.83 if metallic == 0 else 0.44)
 	mat.metallic = metallic
 	if glow > 0:
 		mat.emission_enabled = true

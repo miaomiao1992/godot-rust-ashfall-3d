@@ -219,6 +219,7 @@ func _paint() -> void:
 		_text(item.text, Vector2(1170, 250 + i * 25), 15, ORANGE if item.head else MUTED)
 	if game.debug_stats:
 		_text("FPS %d  /  SEED %d  /  NODES %d" % [Engine.get_frames_per_second(), game.seed_value, Performance.get_monitor(Performance.OBJECT_NODE_COUNT)], Vector2(40, 200), 15, CYAN)
+		_text("CPU %.1f ms  /  PHYS %.1f ms  /  DRAW %d  /  FX %d" % [Performance.get_monitor(Performance.TIME_PROCESS) * 1000, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000, Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), game.fx.items.size()], Vector2(40, 222), 15, CYAN)
 
 func _draw_radar() -> void:
 	var pos := Vector2(1272, 36)
@@ -476,7 +477,7 @@ func _refresh_rooms() -> void:
 	var list = JSON.parse_string(game.lan.net.rooms_json())
 	room_records = list if list is Array else []
 	for room in room_records:
-		var status: String = "战斗中 · %s / 尸潮 %d" % [game.STAGE_NAMES[int(room.stage)], int(room.wave)] if room.playing else "等待开始"
+		var status: String = "战斗中 · %s / 尸潮 %d" % [game.STAGE_NAMES[int(room.stage)], int(room.wave)] if room.playing else "等待开始 · " + game.STAGE_NAMES[clampi(int(room.stage), 0, 2)]
 		room_list.add_item("%s  |  %d/4  |  %s  |  %s" % [room.name, int(room.players), status, room.ip])
 		var row := room_list.item_count - 1
 		if int(room.players) >= 4 or not room.compatible:
@@ -501,6 +502,17 @@ func show_lan_lobby() -> void:
 	for member in game.lan.members:
 		_label("%s  %s" % ["房主" if int(member.id) == 1 else "队友", member.name], Vector2(445, 363 + row * 48), 23, CYAN if int(member.id) == game.lan.local_id() else WHITE)
 		row += 1
+	_label("起始地图", Vector2(410, 590), 18, MUTED)
+	var maps := OptionButton.new()
+	maps.name = "LobbyMapChoice"
+	maps.position = Vector2(550, 586)
+	maps.size = Vector2(480, 38)
+	maps.add_theme_font_size_override("font_size", 18)
+	for title in game.STAGE_NAMES: maps.add_item(title)
+	maps.select(game.lan.start_stage)
+	maps.disabled = not game.lan.host()
+	maps.item_selected.connect(game.lan.set_start_stage)
+	menu.add_child(maps)
 	var begin := _button("开始尸潮" if game.lan.host() else "等待房主开始", Vector2(410, 631), Vector2(620, 61), game.lan.start_battle, true)
 	begin.disabled = not game.lan.host()
 	_button("离开房间", Vector2(410, 714), Vector2(620, 52), game.return_to_menu)

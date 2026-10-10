@@ -320,7 +320,7 @@ func _boss_skills(delta: float, target: Vector3, distance: float) -> void:
 			charge_direction = (target - global_position).normalized()
 			charge_direction.y = 0
 			charge_windup = 1.1
-			game.fx.tracer(global_position + Vector3.UP * 0.2, target + Vector3.UP * 0.2, Color(1, 0.1, 0.04))
+			game.fx.tracer(global_position + Vector3.UP * 0.2, target + Vector3.UP * 0.2, Color(1, 0.1, 0.04), true)
 			game.hud.toast("BOSS 冲锋蓄力  ·  横向闪避", Color(1, 0.38, 0.18), 2)
 		"acid":
 			game.try_acid_attack(self, target, false)

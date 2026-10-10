@@ -27,6 +27,7 @@ var reload_timer := 0.0
 var reload_total := 1.0
 var invulnerability := 0.0
 var flash_timer := 0.0
+var flash_pending := false
 var gun_kick := 0.0
 var bob := 0.0
 var step_timer := 0.0
@@ -47,6 +48,8 @@ var network_position := Vector3.ZERO
 var network_yaw := 0.0
 var avatar: Node3D
 var avatar_animation: AnimationPlayer
+var avatar_skeleton: Skeleton3D
+var arm_chains: Array[Dictionary] = []
 
 func _ready() -> void:
 	WEAPONS = game.core.weapons()
@@ -81,7 +84,9 @@ func _ready() -> void:
 	camera.add_child(flashlight)
 	_build_weapon()
 	if game.is_lan(): _build_avatar()
-	rig.visible = is_local
+	rig.visible = true
+	flashlight.visible = is_local
+	_update_weapon_pose()
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_local or game.state != "playing" or (game.is_lan() and game.hud.menu.visible):
@@ -109,9 +114,6 @@ func _physics_process(delta: float) -> void:
 	shot_timer -= delta
 	invulnerability -= delta
 	empty_timer -= delta
-	flash_timer -= delta
-	flash.visible = flash_timer > 0
-	flash_light.visible = flash_timer > 0
 	if reload_timer > 0:
 		reload_timer -= delta
 		if reload_timer <= 0 and not game.is_lan():
@@ -174,15 +176,14 @@ func _physics_process(delta: float) -> void:
 			game.sound.play("empty", -8)
 			empty_timer = 0.3
 			begin_reload()
-	recoil = move_toward(recoil, 0, delta * 0.22)
-	trauma = move_toward(trauma, 0, delta * 1.8)
-	gun_kick = lerpf(gun_kick, 0, minf(delta * 15, 1))
 	aim = move_toward(aim, 1.0 if aiming else 0.0, delta * 7)
 	camera.fov = lerpf(camera.fov, 61.0 if aiming else 91.0 if sprinting else 82.0, delta * 7)
 	camera.position.y = 1.65 + sin(bob) * (0.028 if moving else 0.0)
+
+func _update_weapon_pose() -> void:
 	camera.rotation = Vector3(aim_pitch - recoil + rng.randf_range(-1, 1) * trauma * 0.022, rng.randf_range(-1, 1) * trauma * 0.018, rng.randf_range(-1, 1) * trauma * 0.011)
 	var reload_pose := sin((1.0 - reload_timer / reload_total) * PI) if reload_timer > 0 else 0.0
-	rig.position = Vector3(lerpf(0.27, 0.035, aim), lerpf(-0.25, -0.2, aim) - reload_pose * 0.25, -0.42 + gun_kick * 0.85)
+	rig.position = Vector3(lerpf(0.27, 0.035, aim) if is_local else 0.18, lerpf(-0.25, -0.2, aim) - reload_pose * 0.25, (-0.42 if is_local else -0.32) + gun_kick * 0.85)
 	rig.position.x += sin(bob * 0.5) * 0.012
 	rig.rotation = Vector3(gun_kick * 0.8 + reload_pose * 0.55 + (0.35 if sprinting else 0.0), reload_pose * -0.35, reload_pose * -0.45 + sin(bob * 0.5) * 0.015)
 
@@ -205,8 +206,9 @@ func _build_weapon() -> void:
 		Forge.box(rig, Vector3(0, -0.14, -0.2), Vector3(0.08, 0.24, 0.12), dark)
 		Forge.box(rig, Vector3(0, -0.015, 0.19), Vector3(0.11, 0.15, 0.27), dark)
 		Forge.box(rig, Vector3(0, -0.075, -length * 0.6), Vector3(0.16, 0.09, length * 0.33), accent if weapon_index == 2 else dark)
-		Forge.box(rig, Vector3(-0.055, -0.16, -length * 0.55), Vector3(0.15, 0.1, 0.14), glove)
-		Forge.box(rig, Vector3(-0.07, -0.26, -length * 0.4), Vector3(0.12, 0.22, 0.13), skin).rotation.x = 0.55
+		if is_local:
+			Forge.box(rig, Vector3(-0.055, -0.16, -length * 0.55), Vector3(0.15, 0.1, 0.14), glove)
+			Forge.box(rig, Vector3(-0.07, -0.26, -length * 0.4), Vector3(0.12, 0.22, 0.13), skin).rotation.x = 0.55
 		for i in 5:
 			Forge.box(rig, Vector3(0, 0.083, -0.13 - i * 0.055), Vector3(0.14, 0.02, 0.015), dark)
 	if weapon_index == 4:
@@ -215,18 +217,21 @@ func _build_weapon() -> void:
 			Forge.box(rig, Vector3(side * 0.073, 0.02, -0.42), Vector3(0.02, 0.07, 0.4), neon)
 		Forge.box(rig, Vector3(0, 0.15, -0.22), Vector3(0.09, 0.1, 0.2), steel)
 		Forge.box(rig, Vector3(0, 0.15, -0.11), Vector3(0.07, 0.07, 0.015), neon)
-	Forge.box(rig, Vector3(0.03, -0.17, 0.08), Vector3(0.14, 0.14, 0.18), glove)
-	Forge.box(rig, Vector3(0.035, -0.29, 0.18), Vector3(0.14, 0.18, 0.15), skin).rotation.x = -0.35
+	if is_local:
+		Forge.box(rig, Vector3(0.03, -0.17, 0.08), Vector3(0.14, 0.14, 0.18), glove)
+		Forge.box(rig, Vector3(0.035, -0.29, 0.18), Vector3(0.14, 0.18, 0.15), skin).rotation.x = -0.35
 	muzzle = Node3D.new()
 	muzzle.position = Vector3(0, -0.005, -length * 0.98)
 	rig.add_child(muzzle)
 	flash = Forge.sphere(muzzle, Vector3(0, 0, -0.075), 0.075, Forge.material(Color(0.2, 0.95, 1) if weapon_index == 4 else Color(1, 0.63, 0.2), 0, 5))
 	flash.scale = Vector3(1, 0.7, 2.4)
 	flash.visible = false
+	flash_pending = false
 	flash_light = OmniLight3D.new()
 	flash_light.light_color = Color(1, 0.58, 0.2) if weapon_index != 4 else Color(0.2, 0.8, 1)
 	flash_light.light_energy = 4.0
 	flash_light.omni_range = 7
+	flash_light.shadow_enabled = false
 	flash_light.visible = false
 	muzzle.add_child(flash_light)
 	for visual in rig.find_children("*", "MeshInstance3D", true, false):
@@ -238,6 +243,7 @@ func fire(sequence: int = 0) -> void:
 		if not game.lan.host():
 			game.lan.request("fire", weapon_index, rotation.y, camera.rotation.x)
 			play_gun_feedback()
+			predict_tracers()
 			magazines[weapon_index] = maxi(magazines[weapon_index] - 1, 0)
 			return
 		if sequence == 0:
@@ -247,10 +253,11 @@ func fire(sequence: int = 0) -> void:
 	var weapon: Dictionary = WEAPONS[weapon_index]
 	if not game.is_lan(): magazines[weapon_index] -= 1
 	shot_timer = weapon.rate
-	recoil += weapon.kick * (0.65 if aim > 0.5 else 1.0)
+	if is_local: recoil += weapon.kick * (0.65 if aim > 0.5 else 1.0)
 	gun_kick = weapon.kick * 2.5
-	trauma = minf(trauma + weapon.kick * 2, 0.7)
+	if is_local: trauma = minf(trauma + weapon.kick * 2, 0.7)
 	flash_timer = 0.045
+	flash_pending = true
 	flash.rotation.z = rng.randf() * TAU
 	game.shots_fired += 1
 	if is_local: game.sound.play(weapon.sound, -4 if weapon_index != 2 else -1)
@@ -288,7 +295,7 @@ func fire(sequence: int = 0) -> void:
 				game.fx.burst(result.position, result.normal, Color(0.85, 0.6, 0.3), 3, 1.6)
 				break
 		if pellet < 3:
-			game.fx.tracer(muzzle.global_position, endpoint, Color(0.15, 0.85, 1) if weapon_index == 4 else Color(1, 0.64, 0.24))
+			game.fx.tracer(muzzle.global_position, endpoint, Color(0.15, 0.85, 1) if weapon_index == 4 else Color(1, 0.64, 0.24), weapon_index == 4)
 			traces.append([endpoint.x, endpoint.y, endpoint.z])
 	if any_hit:
 		game.shots_hit += 1
@@ -401,12 +408,27 @@ func apply_coop_stats(data: Dictionary) -> void:
 func play_gun_feedback() -> void:
 	var weapon: Dictionary = WEAPONS[weapon_index]
 	shot_timer = weapon.rate
-	recoil += weapon.kick * (0.65 if aim > 0.5 else 1.0)
+	if is_local: recoil += weapon.kick * (0.65 if aim > 0.5 else 1.0)
 	gun_kick = weapon.kick * 2.5
-	trauma = minf(trauma + weapon.kick * 2, 0.7)
+	if is_local: trauma = minf(trauma + weapon.kick * 2, 0.7)
 	flash_timer = 0.05
-	game.sound.play(weapon.sound, -4)
+	flash_pending = true
+	flash.rotation.z = rng.randf() * TAU
+	if is_local: game.sound.play(weapon.sound, -4)
+	else: game.sound.positional(weapon.sound, muzzle.global_position, -12)
 	game.fx.casing(muzzle.global_position, camera.global_basis.x)
+
+func predict_tracers() -> void:
+	# Cosmetic prediction only: damage and hit confirmation remain host-authoritative.
+	var weapon: Dictionary = WEAPONS[weapon_index]
+	for pellet in mini(int(weapon.pellets), 3):
+		var spread: float = weapon.spread * (0.36 if aim > 0.5 else 1.0)
+		var direction := (camera.global_basis * Vector3(rng.randf_range(-spread, spread), rng.randf_range(-spread, spread), -1)).normalized()
+		var endpoint := camera.global_position + direction * 110
+		var query := PhysicsRayQueryParameters3D.create(camera.global_position, endpoint, 5, [get_rid()])
+		var result := get_world_3d().direct_space_state.intersect_ray(query)
+		if not result.is_empty(): endpoint = result.position
+		game.fx.tracer(muzzle.global_position, endpoint, Color(0.15, 0.85, 1) if weapon_index == 4 else Color(1, 0.64, 0.24), weapon_index == 4)
 
 func _build_avatar() -> void:
 	avatar = preload("res://assets/models/survivor_soldier.glb").instantiate()
@@ -418,6 +440,14 @@ func _build_avatar() -> void:
 		mesh.custom_aabb = (mesh.global_transform.affine_inverse() * global_transform) * AABB(Vector3(-0.8, -0.2, -0.8), Vector3(1.6, 2.6, 1.6))
 	avatar.visible = not is_local
 	avatar_animation = avatar.find_child("AnimationPlayer", true, false)
+	avatar_skeleton = avatar.find_child("Skeleton3D", true, false)
+	if not is_local and avatar_skeleton:
+		for side in ["Left", "Right"]:
+			var upper := avatar_skeleton.find_bone(side + "Arm")
+			var lower := avatar_skeleton.find_bone(side + "ForeArm")
+			var hand := avatar_skeleton.find_bone(side + "Hand")
+			if upper >= 0 and lower >= 0 and hand >= 0:
+				arm_chains.append({"upper": upper, "lower": lower, "hand": hand, "left": side == "Left", "a": avatar_skeleton.get_bone_global_rest(upper), "b": avatar_skeleton.get_bone_global_rest(lower), "c": avatar_skeleton.get_bone_global_rest(hand)})
 	if avatar_animation and avatar_animation.has_animation("idle"):
 		avatar_animation.get_animation("idle").loop_mode = Animation.LOOP_LINEAR
 		avatar_animation.play("idle")
@@ -427,19 +457,63 @@ func _build_avatar() -> void:
 		label.pixel_size = 0.009
 
 func _process(delta: float) -> void:
+	flash_timer = maxf(flash_timer - delta, 0)
+	# Always display a newly received shot for at least one rendered frame,
+	# even when a slow frame is longer than the flash's nominal lifetime.
+	flash.visible = flash_pending or flash_timer > 0
+	flash_light.visible = flash.visible
+	flash_pending = false
+	recoil = move_toward(recoil, 0, delta * 0.22)
+	trauma = move_toward(trauma, 0, delta * 1.8)
+	gun_kick = lerpf(gun_kick, 0, 1.0 - exp(-delta * 15))
+	if game.state == "playing" or not is_local: _update_weapon_pose()
 	if not game.is_lan(): return
 	if not is_local:
-		flash_timer -= delta
-		flash.visible = flash_timer > 0
-		flash_light.visible = flash_timer > 0
+		rig.visible = life == "alive"
 		if avatar_animation:
 			var clip := "run" if velocity.length() > 7 else "walk" if velocity.length() > 0.7 else "idle"
 			if avatar_animation.has_animation(clip) and avatar_animation.current_animation != clip:
 				avatar_animation.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
 				avatar_animation.play(clip, 0.15)
 		avatar.rotation.x = 0 if life == "alive" else -1.15
+		avatar.rotation.z = -gun_kick * 0.12 if life == "alive" else 0.0
+		_pose_weapon_arms()
 	elif life == "dead":
 		var allies: Array = game.lan.active_players()
 		if not allies.is_empty():
 			camera.global_position = allies[0].global_position + Vector3(0, 2.7, 3.5)
 			camera.look_at(allies[0].global_position + Vector3.UP)
+
+func _pose_weapon_arms() -> void:
+	if not avatar_skeleton: return
+	avatar_skeleton.clear_bones_global_pose_override()
+	if life != "alive": return
+	# Keep locomotion on the legs, and solve both arms toward world-space gun grips.
+	# Skeleton units are asset-defined (this soldier uses centimetres), so all
+	# lengths and targets are computed in skeleton space rather than hardcoded.
+	var length: float = [0.35, 0.5, 0.76, 0.65, 0.87][weapon_index]
+	for chain in arm_chains:
+		var a: Transform3D = chain.a
+		var b: Transform3D = chain.b
+		var c: Transform3D = chain.c
+		var shoulder: Vector3 = avatar_skeleton.get_bone_global_pose(chain.upper).origin
+		var grip := Vector3(-0.055, -0.12, -length * 0.55) if chain.left and weapon_index > 0 else Vector3(-0.025 if chain.left else 0.03, -0.12, 0.025)
+		var target := avatar_skeleton.to_local(rig.to_global(grip))
+		var upper_length := a.origin.distance_to(b.origin)
+		var lower_length := b.origin.distance_to(c.origin)
+		var direction := (target - shoulder).normalized()
+		var distance := clampf(shoulder.distance_to(target), absf(upper_length - lower_length) + 0.01, upper_length + lower_length - 0.01)
+		target = shoulder + direction * distance
+		var pole := avatar_skeleton.global_basis.inverse() * (global_basis * Vector3(-1 if chain.left else 1, -1, 0))
+		var bend := (pole - direction * pole.dot(direction)).normalized()
+		var along := (upper_length * upper_length + distance * distance - lower_length * lower_length) / (2 * distance)
+		var elbow := shoulder + direction * along + bend * sqrt(maxf(upper_length * upper_length - along * along, 0))
+		a.basis = Basis(Quaternion((b.origin - a.origin).normalized(), (elbow - shoulder).normalized())) * a.basis
+		a.origin = shoulder
+		b.basis = Basis(Quaternion((c.origin - b.origin).normalized(), (target - elbow).normalized())) * b.basis
+		b.origin = elbow
+		c.origin = target
+		c.basis = b.basis * chain.b.basis.inverse() * c.basis
+		avatar_skeleton.set_bone_global_pose_override(chain.upper, a, 1.0, true)
+		avatar_skeleton.set_bone_global_pose_override(chain.lower, b, 1.0, true)
+		avatar_skeleton.set_bone_global_pose_override(chain.hand, c, 1.0, true)

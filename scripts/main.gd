@@ -165,13 +165,15 @@ func _build_run() -> void:
 	acid_cast_cooldown = 0
 	_style_environment()
 
-func start_run() -> void:
+func start_run(start_stage: int = 0) -> void:
 	if is_lan() and not lan.host(): return
 	get_tree().paused = false
 	Engine.time_scale = 1.0
 	core.reset_run()
-	stage_index = 0
-	if state == "dead" or state == "victory" or wave > 0:
+	stage_index = clampi(start_stage, 0, STAGE_NAMES.size() - 1)
+	# Advance only the rules cursor; skipped maps award no XP, loot or kills.
+	for skipped_wave in stage_index * 3: core.advance_wave()
+	if state == "dead" or state == "victory" or wave > 0 or level.stage != stage_index:
 		_build_run()
 	wave = 0
 	level_number = 1

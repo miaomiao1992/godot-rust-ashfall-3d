@@ -6,6 +6,7 @@ func _initialize() -> void:
 func verify() -> void:
 	var pack := "res://dist/ASHFALL-LAN-Windows64/ASHFALL-LAN.pck" if "--lan-pack" in OS.get_cmdline_user_args() else "res://dist/ASHFALL-Windows64/ASHFALL.pck"
 	assert(ProjectSettings.load_resource_pack(pack), "Exported PCK must mount")
+	assert(not FileAccess.get_file_as_bytes("res://project.binary").hex_encode().contains("/etc/ssl/cert.pem".to_utf8_buffer().hex_encode()), "Exported settings must not retain the local certificate workaround")
 	assert(ClassDB.class_exists("LanSession"), "Rust LAN class must register")
 	print("PACK VERIFIED: mounted Windows release resources")
 	var extension := FileAccess.get_file_as_string("res://native/ashfall.gdextension")
@@ -39,5 +40,29 @@ func verify() -> void:
 	await process_frame
 	assert(game.stage_index == 2)
 	print("PACK VERIFIED: compiled release scripts + all three sectors load")
+	if "--lan-pack" in OS.get_cmdline_user_args():
+		game.test_mode = true
+		game.lan.create_room("导出射击检查", "房主", 42672)
+		assert(game.hud.menu.find_child("LobbyMapChoice", true, false).item_count == 3)
+		game.lan.set_start_stage(1)
+		game.lan.start_battle()
+		assert(game.stage_index == 1 and game.wave == 4)
+		game.state = "testing"
+		game.set_process(false)
+		game.lan.spawn_player(2, "队友")
+		var pawn = game.lan.players[2]
+		pawn.aim_pitch = -0.2
+		pawn._process(0)
+		assert(pawn.rig.visible and pawn.arm_chains.size() == 2)
+		assert(absf(pawn.camera.rotation.x + 0.2) < 0.001)
+		game.lan.show_shot({"owner": 2, "weapon": 4, "pos": [0, 5, 0], "traces": [[0, 5, -10]], "hit": false, "head": false, "killed": false})
+		pawn._process(0.1)
+		assert(pawn.weapon_index == 4 and pawn.flash.visible and pawn.gun_kick > 0)
+		assert(game.fx.items.size() >= 2)
+		print("PACK VERIFIED: teammate weapon, grip pose, pitch, slow-frame flash and tracer")
+		game.fx.tracer(Vector3.ZERO, Vector3(0, 0, -110))
+		assert(game.fx.items.back().node.scale.z < 1.201)
+		print("PACK VERIFIED: selected starting map and short ordinary bullet tracer")
+		game.lan.leave()
 	print("PACK VALIDATION COMPLETE (macOS host / Windows PCK; Windows DLL checked separately)")
 	quit()

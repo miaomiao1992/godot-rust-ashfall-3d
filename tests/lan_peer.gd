@@ -31,6 +31,10 @@ var saw_restart := false
 var scenario_report := -1
 var downed_at := 0.0
 var photographed := false
+var saw_remote_shot := false
+var saw_remote_pitch := false
+var requested_map := 0
+var saw_selected_map := false
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -41,11 +45,13 @@ func _ready() -> void:
 	for arg in args:
 		if arg.begins_with("--duration="): duration = float(arg.trim_prefix("--duration="))
 		if arg.begins_with("--port="): port = int(arg.trim_prefix("--port="))
+		if arg.begins_with("--map="): requested_map = clampi(int(arg.trim_prefix("--map=")), 0, 2)
 	game.test_mode = true
 	game.lan.net.set_discovery_port(port + 1)
 	game.lan.net.start_discovery()
 	if is_host:
 		game.lan.create_room("LAN 自动测试", "房主", port)
+		game.lan.set_start_stage(requested_map)
 	else:
 		game.lan.join_room("127.0.0.1", "队友-%d" % OS.get_process_id(), port)
 
@@ -60,14 +66,29 @@ func _process(delta: float) -> void:
 		print("LAN_TEST BATTLE_STARTED members=", game.lan.members.size())
 	if scenario and game.lan.enabled:
 		_run_scenario(delta)
+	if game.state == "playing" and game.stage_index == requested_map and game.lan.start_stage == requested_map and game.wave == requested_map * 3 + 1:
+		saw_selected_map = true
 	if not is_host and game.state == "playing" and game.lan.players.size() >= 2:
 		joined_battle = true
 		bot_sequence += 1
-		game.lan.net.send_input(0.25 if elapsed < 3.0 else 0.0, 0.0, 0.0, 0.0, 0, bot_sequence)
+		game.lan.net.send_input(0.25 if elapsed < 3.0 else 0.0, 0.0, 0.0, -0.2, 0, bot_sequence)
 		shot_timer -= delta
 		if shot_timer <= 0:
 			shot_timer = 0.35
-			game.lan.request("fire", 0, 0, 0)
+			game.lan.request("fire", 0, 0, -0.2)
+	if is_host and game.state == "playing":
+		shot_timer -= delta
+		if shot_timer <= 0 and game.player.life == "alive":
+			shot_timer = 0.35
+			game.player.aim_pitch = -0.2
+			game.player._update_weapon_pose()
+			game.player.fire()
+	for id in game.lan.players:
+		if id == game.lan.local_id(): continue
+		var pawn = game.lan.players[id]
+		if pawn.rig.is_visible_in_tree() and pawn.flash_timer > 0 and pawn.gun_kick > 0:
+			saw_remote_shot = true
+		if absf(pawn.aim_pitch + 0.2) < 0.01: saw_remote_pitch = true
 	var second := int(elapsed)
 	if second % 2 == 0 and second != last_report:
 		last_report = second
@@ -76,6 +97,10 @@ func _process(delta: float) -> void:
 		var passed: bool = battle_started if is_host else (game.lan.net.role() == "offline" if expect_reject else joined_battle and game.lan.enabled and game.lan.net.role() == "client" and game.lan.players.size() >= 2)
 		if scenario:
 			passed = passed and (revive_test and upgrade_test and stage_test and wipe_test and restart_test if is_host else saw_downed and saw_revived and saw_upgrade and saw_stage and saw_wipe and saw_restart)
+		if not expect_reject:
+			passed = passed and saw_remote_shot and saw_remote_pitch and saw_selected_map
+			print("LAN_TEST REMOTE_COMBAT shot=", saw_remote_shot, " pitch=", saw_remote_pitch)
+			print("LAN_TEST SELECTED_MAP stage=", requested_map, " synchronized=", saw_selected_map)
 		print("LAN_TEST RESULT ", "PASS" if passed else "FAIL", " host=", is_host, " discovery=", discovery_seen)
 		game.lan.leave()
 		game.get_tree().quit(0 if passed else 1)
