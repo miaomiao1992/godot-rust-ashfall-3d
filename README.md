@@ -1,6 +1,7 @@
 # ASHFALL · 余烬禁区
 
-Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.2.1 空间重制修复版**。
+Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.3.0 LAN 合作版**。
+当前开发分支：`feature/lan-coop`。`main` 为已发布的 v0.2.1 单机稳定版。
 完整挑战包括三个固定设计的关卡、九波尸潮、三个关底 Boss，以及成长解锁的五种武器。
 
 ## 场景预览
@@ -12,15 +13,41 @@ Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.
 
 ## Windows 64 位游玩
 
-**下载可直接运行的成品：[Windows v0.2.1 Release](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.2.1)。**
-
-成品压缩包：`dist/ASHFALL-Windows64-v0.2.1.zip`（兼容路径 `dist/ASHFALL-Windows64.zip` 同步更新）
+**下载局域网版：[Windows64 LAN v0.3.0 预发布版](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.3.0-lan)。**
+本地成品：`dist/ASHFALL-LAN-Windows64-v0.3.0.zip`。完整解压后运行 `ASHFALL-LAN.exe`。
+原单机稳定版：[Windows v0.2.1 Release](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.2.1)。
 
 1. 将 ZIP 完整解压到任意文件夹。
-2. 双击 `ASHFALL.exe`，点击「进入禁区」。
+2. 双击 `ASHFALL-LAN.exe`，选择「单人生存」或「局域网合作」。
 3. 保留同目录的 `.pck`、Rust `.dll` 和其他随包文件；无需安装 Godot 或 Rust。
 
 运行环境：Windows 10 / 11 64 位，支持 OpenGL 3.3 的显卡，键盘和鼠标。
+
+## 局域网合作
+
+- 主菜单「局域网合作」：房间自动发现、创建房间、加入、IP 直连。
+- 最多四人，房主开始后可热加入。房主离开时返回大厅。
+- 团队共享经验与武器等级，血量、弹药、强化独立；按 **U** 分配个人强化点。
+- 倒地有 20 秒救援时间，队友靠近按住 **E** 3 秒可恢复 30% 生命；超时观战、下一波复活。
+- 全队失去战斗能力时结算，房主可重开。联机个人菜单不会暂停战场。
+- 新队友加载场景期间不参与战斗判定，准备完成后激活；继承当前武器等级和强化点。
+- 默认 UDP 游戏端口 **42042**，发现端口 **42043**；房间列表也包含正在战斗的房间。
+- 同一台电脑多开可用 `127.0.0.1`；不同电脑使用大厅显示的房主局域网 IP。
+
+详细操作：[LAN 游玩说明](docs/lan-readme.txt)。
+
+### Rust 主导的网络与规则
+
+`rust/src/network.rs` 实现 UDP 发现、ENet 调用、连接状态、类型化协议、压缩、MTU 分包／限量重组和断线处理。
+Godot 的 ENet API 反射调用集中在 Rust 引擎适配边界，以兼容当前最小绑定配置；规则模块使用静态 Rust 类型。
+`rust/src/coop.rs` 管理独立角色状态、弹药、换弹、射速与动作去重、移动速度／耐力、强化、倒地和救援。
+敌人目标选择、团队经验、难度与武器规则通过 Rust 核心结算；Godot 处理物理射线、场景和表现。
+`scripts/lan_game.gd` 是场景/UI 同步适配器，负责应用 Rust 网络事件和权威快照。
+
+房主执行战斗与尸潮，客户端执行本地移动预测与快照校正。完整战局同步包含稳定实体 ID、战局编号和快照序号。
+射击反馈在本机立即表现，命中以房主结果确认。
+Rust 现有 18 项测试，配合严格 Clippy；联机测试使用真正的房主和客户端进程。
+运行验证已覆盖本机 macOS 多进程和图形客户端；两台 Windows 电脑之间的局域网通信尚待实机确认。
 
 ### v0.2.1 卡关修复
 
@@ -41,6 +68,7 @@ Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.
 | 冲刺 / 跳跃 | Shift / 空格 |
 | 换弹 / 手电 | R / F |
 | 操作冷却阀 | E |
+| 救援队友 / 个人强化 | 按住 E / U |
 | 切换武器 | 1–5 或鼠标滚轮 |
 | 暂停、鼠标灵敏度 | Esc |
 | 性能信息 | F3 |
@@ -136,9 +164,9 @@ rustup target add x86_64-pc-windows-gnu
 CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER="$PWD/tools/zig-linker.sh" \
   cargo build --manifest-path rust/Cargo.toml --release --target x86_64-pc-windows-gnu
 python3 tools/fetch_windows_template.py
-mkdir -p dist/ASHFALL-Windows64
-godot --headless --path . --export-release Windows64 dist/ASHFALL-Windows64/ASHFALL.exe
-python3 tools/package_windows.py
+mkdir -p dist/ASHFALL-LAN-Windows64
+godot --headless --path . --export-release Windows64-LAN dist/ASHFALL-LAN-Windows64/ASHFALL-LAN.exe
+python3 tools/package_windows.py --lan
 ```
 
 Zig 适配脚本过滤不支持的 GNU 参数，PE `.drectve` 显式导出 `gdext_rust_init`。
@@ -152,6 +180,9 @@ cargo clippy --manifest-path rust/Cargo.toml -- -D warnings
 godot --headless --path . -- --smoke-test
 godot --path . -- --arena-regression
 godot --path . -- --visual-review
+python3 tools/test_lan.py --four
+python3 tools/test_lan.py --scenario
+godot --path . -- --lan-visual
 ```
 
 Rust 包含 9 项规则测试。Godot 的 88 项集成检查覆盖实际射线命中、全部武器、换弹、解锁、三关路径连通、成长保留、Boss 技能与狂暴、九波自动流程、死亡重启和通关，还验证关卡地面拓扑差异、真实坡道碰撞与丧尸爬坡、导航高差连续性、冷却阀操作／波次门槛、腐蚀伤害时序／固定落点／限量与防叠加。

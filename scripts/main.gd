@@ -6,6 +6,7 @@ const LevelScript = preload("res://scripts/level.gd")
 const EffectsScript = preload("res://scripts/effects.gd")
 const SoundScript = preload("res://scripts/sound.gd")
 const HudScript = preload("res://scripts/hud.gd")
+const LanGameScript = preload("res://scripts/lan_game.gd")
 
 var world: Node3D
 var level
@@ -51,6 +52,7 @@ var acid_cast_cooldown := 0.0
 var interaction_hint := ""
 var objective_count := 0
 var objective_waiting := false
+var lan
 const STAGE_NAMES := ["断桥高架", "沉没船坞", "熔心实验场"]
 const BOSS_NAMES := ["断街暴君", "溺潮巨骸", "疫潮母体"]
 
@@ -67,17 +69,23 @@ func _ready() -> void:
 	hud = HudScript.new()
 	hud.game = self
 	add_child(hud)
+	lan = LanGameScript.new(self)
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	hud.show_menu()
 	if "--smoke-test" in OS.get_cmdline_user_args():
 		call_deferred("_smoke_test")
 	if "--visual-review" in OS.get_cmdline_user_args():
 		call_deferred("_visual_review")
+	if "--lan-visual" in OS.get_cmdline_user_args():
+		call_deferred("_lan_visual")
 	if "--arena-regression" in OS.get_cmdline_user_args():
 		call_deferred("_arena_regression")
+	if "--lan-host" in OS.get_cmdline_user_args() or "--lan-client" in OS.get_cmdline_user_args():
+		call_deferred("_lan_test_start")
 
 func _setup_inputs() -> void:
 	var keys := {"forward": KEY_W, "back": KEY_S, "left": KEY_A, "right": KEY_D, "sprint": KEY_SHIFT, "jump": KEY_SPACE, "reload": KEY_R, "flashlight": KEY_F, "interact": KEY_E, "weapon_1": KEY_1, "weapon_2": KEY_2, "weapon_3": KEY_3, "weapon_4": KEY_4, "weapon_5": KEY_5}
+	keys["upgrade_menu"] = KEY_U
 	for action in keys:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
@@ -142,8 +150,12 @@ func _build_run() -> void:
 	world.add_child(sound)
 	player = PlayerScript.new()
 	player.game = self
+	if is_lan():
+		player.peer_id = lan.local_id()
+		player.player_name = lan.nickname
 	player.position = level.player_spawn
 	world.add_child(player)
+	if is_lan(): lan.world_ready(player)
 	pickups.clear()
 	hazards.clear()
 	boss = null
@@ -154,6 +166,7 @@ func _build_run() -> void:
 	_style_environment()
 
 func start_run() -> void:
+	if is_lan() and not lan.host(): return
 	get_tree().paused = false
 	Engine.time_scale = 1.0
 	core.reset_run()
@@ -174,6 +187,7 @@ func start_run() -> void:
 	hitstop_left = 0
 	upgrade_due = 0
 	state = "playing"
+	if is_lan() and lan.players.is_empty(): lan.world_ready(player)
 	player.camera.position = Vector3(0, 1.65, 0)
 	player.camera.rotation = Vector3.ZERO
 	player.rotation = Vector3.ZERO
@@ -188,6 +202,11 @@ func _begin_wave() -> void:
 	if int(data.stage) != stage_index:
 		_change_stage(int(data.stage))
 	wave = data.wave
+	if is_lan():
+		core.coop_respawn()
+		lan.sync_stats()
+		for p in lan.players.values():
+			if p.position.y < level.fall_threshold: p.position = level.player_spawn
 	spawn_left = data.budget
 	spawn_cursor = 0
 	spawn_timer = 0.2
@@ -200,13 +219,15 @@ func _begin_wave() -> void:
 	sound.play("growl", -12, 0.6)
 
 func _process(delta: float) -> void:
-	if state == "menu":
+	if lan != null: lan.process(delta)
+	if state in ["menu", "lobby", "connecting"]:
 		menu_time += delta
 		player.camera.global_position = level.menu_camera + Vector3(sin(menu_time * 0.07) * 3, 0, 0)
 		player.camera.look_at(level.menu_focus)
 		player.rig.visible = false
 		return
-	player.rig.visible = state != "dead"
+	player.rig.visible = state != "dead" and (not is_lan() or player.life == "alive")
+	if is_lan() and not lan.host(): return
 	if state != "playing":
 		return
 	if hitstop_left > 0:
@@ -216,12 +237,14 @@ func _process(delta: float) -> void:
 	survival_time += delta
 	acid_cast_cooldown = maxf(acid_cast_cooldown - delta, 0)
 	_update_interaction()
-	if player.position.y < level.fall_threshold:
-		player.take_damage(24, player.position)
+	var party: Array = lan.active_players() if is_lan() else [player]
+	for pawn in party:
+		if pawn.position.y >= level.fall_threshold: continue
+		pawn.take_damage(24, pawn.position)
 		if state != "playing":
 			return
-		player.position = level.safe_ground(player.position) + Vector3.UP * 0.12
-		player.velocity = Vector3.ZERO
+		pawn.position = level.safe_ground(pawn.position) + Vector3.UP * 0.12
+		pawn.velocity = Vector3.ZERO
 		hud.toast("跌落救援 · 生命受损", Color(1, 0.56, 0.24), 2)
 	crowd_timer -= delta
 	if crowd_timer <= 0:
@@ -232,6 +255,7 @@ func _process(delta: float) -> void:
 		alive = positions.size()
 		core.update_crowd(positions)
 		crowd_timer = 0.1
+	if is_lan(): levelup_pending = 0
 	if levelup_pending > 0:
 		upgrade_due -= delta
 		if upgrade_due <= 0:
@@ -260,7 +284,9 @@ func _process(delta: float) -> void:
 			return
 		if next_wave <= 0:
 			next_wave = 12.0
-			player.resupply(true)
+			if is_lan():
+				for p in lan.players.values(): core.coop_resupply(p.peer_id, true)
+			else: player.resupply(true)
 			hud.wave_banner("关卡肃清" if wave % 3 == 0 else "暂时安全", "12 秒后进入 " + STAGE_NAMES[mini(stage_index + 1, 2)] if wave % 3 == 0 else "补给已送达 · 恢复生命与弹药")
 		else:
 			next_wave -= delta
@@ -307,6 +333,7 @@ func zombie_killed(zombie, head: bool) -> void:
 	hud.add_kill(head, zombie.kind, data.reward)
 	levelup_pending += int(data.levels_gained)
 	if data.levels_gained > 0:
+		if is_lan(): hud.toast("团队升级 · U 分配个人强化", Color(0.3, 0.9, 0.8), 4)
 		upgrade_due = 0.8
 		for i in range(1, 5):
 			if old_level < int(player.WEAPONS[i].level) and level_number >= int(player.WEAPONS[i].level):
@@ -325,13 +352,15 @@ func _drop_pickup(pos: Vector3, kind: String) -> void:
 		oldest.node.queue_free()
 	var root := Node3D.new()
 	world.add_child(root)
-	root.position = Vector3(pos.x, 0.42, pos.z)
+	root.position = level.ground_point(pos) + Vector3.UP * 0.42
 	var color := Color(0.24, 0.91, 0.65) if kind == "health" else Color(1, 0.68, 0.23)
 	Forge.box(root, Vector3.ZERO, Vector3(0.36, 0.28, 0.3), Forge.material(Color(0.1, 0.17, 0.18), 0.5))
 	Forge.box(root, Vector3(0, 0.15, 0), Vector3(0.22, 0.02, 0.07), Forge.material(color, 0, 2))
 	Forge.box(root, Vector3(0, 0.15, 0), Vector3(0.07, 0.02, 0.22), Forge.material(color, 0, 2))
 	Forge.cylinder(root, Vector3(0, -0.36, 0), 0.4, 0.015, Forge.material(color, 0, 0.8))
-	pickups.append({"node": root, "kind": kind, "life": 35.0, "base": root.position.y})
+	var id: int = lan.next_id if is_lan() else 0
+	if is_lan(): lan.next_id += 1
+	pickups.append({"node": root, "kind": kind, "life": 35.0, "base": root.position.y, "nid": id})
 
 func _update_pickups(delta: float) -> void:
 	for i in range(pickups.size() - 1, -1, -1):
@@ -339,12 +368,19 @@ func _update_pickups(delta: float) -> void:
 		item.life -= delta
 		item.node.rotation.y += delta
 		item.node.position.y = item.base + sin(survival_time * 3 + i) * 0.07
-		if item.node.global_position.distance_to(player.global_position + Vector3.UP * 0.5) < 2.1:
+		var recipient = null
+		for p in (lan.active_players() if is_lan() else [player]):
+			if item.node.global_position.distance_to(p.global_position + Vector3.UP * 0.5) < 2.1:
+				recipient = p
+				break
+		if recipient != null:
 			if item.kind == "health":
-				player.hp = minf(player.hp + 24, player.max_hp)
+				if is_lan(): core.coop_heal(recipient.peer_id, 24)
+				else: recipient.hp = minf(recipient.hp + 24, recipient.max_hp)
 				hud.toast("急救包  +24 HP", Color(0.3, 0.94, 0.69), 1.2)
 			else:
-				player.resupply()
+				if is_lan(): core.coop_resupply(recipient.peer_id, false)
+				else: recipient.resupply()
 				hud.toast("弹药回收  +补给", Color(1, 0.7, 0.3), 1.2)
 			sound.play("reload", -15, 1.5)
 			item.life = 0
@@ -361,6 +397,11 @@ func _open_upgrade() -> void:
 	hud.show_upgrade()
 
 func choose_upgrade(index: int) -> void:
+	if is_lan():
+		lan.request("upgrade", index)
+		hud.hide_overlay()
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		return
 	var data: Dictionary = core.apply_upgrade(index)
 	player.damage_multiplier = data.damage_multiplier
 	player.max_hp = data.max_hp
@@ -379,6 +420,7 @@ func choose_upgrade(index: int) -> void:
 	sound.play("unlock", -10)
 
 func hit_stop(duration: float) -> void:
+	if is_lan(): return
 	hitstop_left = duration
 	Engine.time_scale = 0.38
 
@@ -394,6 +436,11 @@ func die() -> void:
 	hud.show_death()
 
 func pause_run() -> void:
+	if is_lan():
+		if state != "playing": return
+		if hud.menu.visible: resume_run()
+		else: hud.show_pause(); Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		return
 	if state == "playing":
 		state = "paused"
 		Engine.time_scale = 1
@@ -404,12 +451,17 @@ func pause_run() -> void:
 		resume_run()
 
 func resume_run() -> void:
+	if is_lan():
+		hud.hide_overlay()
+		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+		return
 	state = "playing"
 	get_tree().paused = false
 	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	hud.hide_overlay()
 
 func return_to_menu() -> void:
+	if is_lan(): lan.leave()
 	get_tree().paused = false
 	Engine.time_scale = 1
 	state = "menu"
@@ -446,6 +498,14 @@ func _change_stage(index: int) -> void:
 	player.rotation.y = 0
 	player.aim_pitch = 0
 	player.resupply(true)
+	if is_lan():
+		for p in lan.players.values():
+			p.position = level.safe_ground(level.player_spawn + Vector3((p.peer_id % 3 - 1) * 2, 0, -2)) + Vector3.UP * 0.15
+			p.velocity = Vector3.ZERO
+			if p.peer_id != lan.local_id(): core.coop_loading(p.peer_id)
+		lan.replicas.clear()
+		lan.zones.clear()
+		lan.network_pickups.clear()
 	_style_environment()
 
 func _style_environment() -> void:
@@ -473,6 +533,7 @@ func _create_enemy(kind: int, requested: Vector3):
 	zombie.kind = kind
 	zombie.position = placement.position
 	world.add_child(zombie)
+	if is_lan(): lan.register_enemy(zombie)
 	alive += 1
 	return zombie
 
@@ -539,7 +600,9 @@ func create_hazard(pos: Vector3, radius: float, kind: String, warning: float = 1
 	mat.set_shader_parameter("active_color", Color(0.36, 0.64, 0.12) if kind == "acid" else Color(1, 0.12, 0.025))
 	visual.material_override = mat
 	root.add_child(visual)
-	hazards.append({"node": root, "material": mat, "radius": radius, "kind": kind, "warning": warning, "warning_total": warning, "life": duration if kind == "acid" else 0.2, "tick": 0.0, "activated": false, "source": source_id})
+	var id: int = lan.next_id if is_lan() else 0
+	if is_lan(): lan.next_id += 1
+	hazards.append({"node": root, "material": mat, "radius": radius, "kind": kind, "warning": warning, "warning_total": warning, "life": duration if kind == "acid" else 0.2, "tick": 0.0, "activated": false, "source": source_id, "nid": id})
 
 func _update_hazards(delta: float) -> void:
 	for i in range(hazards.size() - 1, -1, -1):
@@ -560,10 +623,14 @@ func _update_hazards(delta: float) -> void:
 				sound.play("shotgun", -5, 0.4)
 		h.life -= active_delta
 		h.tick -= active_delta
-		var flat_distance := Vector2(h.node.position.x - player.position.x, h.node.position.z - player.position.z).length()
-		if h.life > 0 and h.tick <= 0 and flat_distance < h.radius and absf(player.position.y - level.surface_height(player.position)) < 0.85:
-			player.take_damage(12 if h.kind == "acid" else 45, h.node.position)
-			h.tick = 0.65
+		if h.life > 0 and h.tick <= 0:
+			var hit := false
+			for p in (lan.active_players() if is_lan() else [player]):
+				var flat_distance := Vector2(h.node.position.x - p.position.x, h.node.position.z - p.position.z).length()
+				if flat_distance < h.radius and absf(p.position.y - level.surface_height(p.position)) < 0.85:
+					p.take_damage(12 if h.kind == "acid" else 45, h.node.position)
+					hit = true
+			if hit: h.tick = 0.65
 		if h.life <= 0:
 			h.material.set_shader_parameter("fade", clampf(1.0 + h.life / 0.55, 0, 1))
 		if h.life <= -0.55:
@@ -585,15 +652,22 @@ func _update_interaction() -> void:
 			return
 
 func interact() -> void:
+	if is_lan():
+		lan.request("interact")
+		return
+	interact_for_player(player)
+
+func interact_for_player(pawn) -> void:
 	if state != "playing":
 		return
+	if is_lan() and pawn.life != "alive": return
 	for i in level.terminals.size():
 		var terminal: Dictionary = level.terminals[i]
-		if not terminal.activated and player.position.distance_to(terminal.position) < 3.4 and core.activate_terminal(i):
+		if not terminal.activated and pawn.position.distance_to(terminal.position) < 3.4 and core.activate_terminal(i):
 			level.activate_terminal(i)
 			objective_count = core.objective_progress()
-			player.hp = minf(player.hp + 12, player.max_hp)
-			player.resupply()
+			if is_lan(): core.coop_heal(pawn.peer_id, 12); core.coop_resupply(pawn.peer_id, false)
+			else: pawn.hp = minf(pawn.hp + 12, pawn.max_hp); pawn.resupply()
 			sound.play("unlock", -8)
 			hud.wave_banner("冷却阀已关闭  %d / 3" % objective_count, "核心护罩解除" if objective_count == 3 else "其余阀门已在雷达标记")
 			return
@@ -604,11 +678,14 @@ func win() -> void:
 	best_wave = maxi(best_wave, wave)
 	best_kills = maxi(best_kills, kills)
 	_save_record()
-	get_tree().paused = true
+	get_tree().paused = not is_lan()
 	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	hud.show_victory()
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event.is_action_pressed("upgrade_menu") and is_lan() and int(lan.stats.get(lan.local_id(), {}).get("points", 0)) > 0:
+		hud.show_upgrade()
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 	if event.is_action_pressed("interact"):
 		interact()
 	if event is InputEventKey and event.pressed and not event.echo:
@@ -649,3 +726,19 @@ func _arena_regression() -> void:
 	var tester = load("res://tests/arena_regression.gd").new()
 	tester.game = self
 	add_child(tester)
+
+func is_lan() -> bool:
+	return lan != null and lan.enabled
+
+func target_for_enemy(position: Vector3):
+	return lan.target_for_enemy(position) if is_lan() else player
+
+func _lan_test_start() -> void:
+	var tester = load("res://tests/lan_peer.gd").new()
+	tester.game = self
+	add_child(tester)
+
+func _lan_visual() -> void:
+	var reviewer = load("res://tests/lan_visual.gd").new()
+	reviewer.game = self
+	add_child(reviewer)

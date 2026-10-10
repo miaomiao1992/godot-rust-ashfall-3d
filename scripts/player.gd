@@ -36,6 +36,17 @@ var empty_timer := 0.0
 var hit_direction := 0.0
 var sprint_exhausted := false
 var rng := RandomNumberGenerator.new()
+var peer_id := 1
+var is_local := true
+var player_name := "幸存者"
+var life := "alive"
+var bleed := 0.0
+var revive_progress := 0.0
+var upgrade_points := 0
+var network_position := Vector3.ZERO
+var network_yaw := 0.0
+var avatar: Node3D
+var avatar_animation: AnimationPlayer
 
 func _ready() -> void:
 	WEAPONS = game.core.weapons()
@@ -55,7 +66,7 @@ func _ready() -> void:
 	camera.near = 0.04
 	camera.far = 150
 	camera.fov = 82
-	camera.current = true
+	camera.current = is_local
 	add_child(camera)
 	rig = Node3D.new()
 	camera.add_child(rig)
@@ -69,9 +80,11 @@ func _ready() -> void:
 	flashlight.shadow_enabled = false
 	camera.add_child(flashlight)
 	_build_weapon()
+	if game.is_lan(): _build_avatar()
+	rig.visible = is_local
 
 func _unhandled_input(event: InputEvent) -> void:
-	if game.state != "playing":
+	if not is_local or game.state != "playing" or (game.is_lan() and game.hud.menu.visible):
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var sensitivity: float = game.sensitivity * (0.65 if aim > 0.5 else 1.0)
@@ -92,6 +105,7 @@ func _unhandled_input(event: InputEvent) -> void:
 func _physics_process(delta: float) -> void:
 	if game.state != "playing":
 		return
+	if game.is_lan() and not is_local and not game.lan.host(): return
 	shot_timer -= delta
 	invulnerability -= delta
 	empty_timer -= delta
@@ -100,29 +114,48 @@ func _physics_process(delta: float) -> void:
 	flash_light.visible = flash_timer > 0
 	if reload_timer > 0:
 		reload_timer -= delta
-		if reload_timer <= 0:
+		if reload_timer <= 0 and not game.is_lan():
 			var needed: int = WEAPONS[weapon_index].mag - magazines[weapon_index]
 			var amount := needed if weapon_index == 0 else mini(needed, reserves[weapon_index])
 			magazines[weapon_index] += amount
 			if weapon_index != 0:
 				reserves[weapon_index] -= amount
 	var input := Input.get_vector("left", "right", "forward", "back")
+	var remote: Dictionary = {}
+	if game.is_lan() and not is_local:
+		remote = game.lan.get_input(peer_id)
+		input = Vector2(remote.x, remote.z)
+		rotation.y = remote.yaw
+		aim_pitch = remote.pitch
+	if game.is_lan() and (life != "alive" or (is_local and game.hud.menu.visible)): input = Vector2.ZERO
 	var direction := (transform.basis * Vector3(input.x, 0, input.y)).normalized()
-	var aiming := Input.is_action_pressed("aim")
+	var aiming: bool = (int(remote.get("buttons", 0)) & 4) != 0 if not is_local else Input.is_action_pressed("aim")
 	if stamina <= 3:
 		sprint_exhausted = true
 	elif stamina >= 25:
 		sprint_exhausted = false
-	sprinting = Input.is_action_pressed("sprint") and input.y < -0.3 and not sprint_exhausted and not aiming and reload_timer <= 0
+	var sprint_input: bool = (int(remote.get("buttons", 0)) & 2) != 0 if not is_local else Input.is_action_pressed("sprint")
+	sprinting = sprint_input and input.y < -0.3 and not sprint_exhausted and not aiming and reload_timer <= 0
 	stamina = clampf(stamina + (-28.0 if sprinting else 19.0) * delta, 0, 100)
 	var speed := (9.2 if sprinting else 3.7 if aiming else 6.0) + speed_bonus
-	velocity.x = move_toward(velocity.x, direction.x * speed, delta * 32)
-	velocity.z = move_toward(velocity.z, direction.z * speed, delta * 32)
+	var desired := direction * speed
+	if game.is_lan() and game.lan.host():
+		desired = game.core.coop_velocity(peer_id, direction, sprint_input and input.y < -0.3, aiming, delta)
+	velocity.x = move_toward(velocity.x, desired.x, delta * 32)
+	velocity.z = move_toward(velocity.z, desired.z, delta * 32)
 	if not is_on_floor():
 		velocity.y -= 24 * delta
-	elif Input.is_action_just_pressed("jump"):
+	elif ((int(remote.get("buttons", 0)) & 1) != 0 if not is_local else Input.is_action_just_pressed("jump")) and life == "alive":
 		velocity.y = 7.2
 	move_and_slide()
+	if game.is_lan() and is_local and not game.lan.host():
+		var buttons := 0
+		if life == "alive" and not game.hud.menu.visible:
+			if Input.is_action_pressed("jump"): buttons |= 1
+			if Input.is_action_pressed("sprint"): buttons |= 2
+			if aiming: buttons |= 4
+			if Input.is_action_pressed("interact"): buttons |= 16
+		game.lan.send_input(delta, input.x, input.y, rotation.y, aim_pitch, buttons)
 	var moving := Vector2(velocity.x, velocity.z).length() > 0.7 and is_on_floor()
 	if moving:
 		bob += delta * (14 if sprinting else 10)
@@ -134,7 +167,7 @@ func _physics_process(delta: float) -> void:
 		bob = lerpf(bob, 0, delta * 5)
 	var weapon: Dictionary = WEAPONS[weapon_index]
 	var wants_fire := Input.is_action_pressed("shoot") if weapon.auto else Input.is_action_just_pressed("shoot")
-	if wants_fire and shot_timer <= 0 and reload_timer <= 0 and not sprinting:
+	if is_local and life == "alive" and not (game.is_lan() and game.hud.menu.visible) and wants_fire and shot_timer <= 0 and reload_timer <= 0 and not sprinting:
 		if magazines[weapon_index] > 0:
 			fire()
 		elif empty_timer <= 0:
@@ -199,9 +232,20 @@ func _build_weapon() -> void:
 	for visual in rig.find_children("*", "MeshInstance3D", true, false):
 		visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
-func fire() -> void:
+func fire(sequence: int = 0) -> void:
+	if game.is_lan():
+		if life != "alive": return
+		if not game.lan.host():
+			game.lan.request("fire", weapon_index, rotation.y, camera.rotation.x)
+			play_gun_feedback()
+			magazines[weapon_index] = maxi(magazines[weapon_index] - 1, 0)
+			return
+		if sequence == 0:
+			game.lan.action_sequence += 1
+			sequence = game.lan.action_sequence
+		if not game.core.coop_fire(peer_id, sequence): return
 	var weapon: Dictionary = WEAPONS[weapon_index]
-	magazines[weapon_index] -= 1
+	if not game.is_lan(): magazines[weapon_index] -= 1
 	shot_timer = weapon.rate
 	recoil += weapon.kick * (0.65 if aim > 0.5 else 1.0)
 	gun_kick = weapon.kick * 2.5
@@ -209,11 +253,13 @@ func fire() -> void:
 	flash_timer = 0.045
 	flash.rotation.z = rng.randf() * TAU
 	game.shots_fired += 1
-	game.sound.play(weapon.sound, -4 if weapon_index != 2 else -1)
+	if is_local: game.sound.play(weapon.sound, -4 if weapon_index != 2 else -1)
+	else: game.sound.positional(weapon.sound, global_position, -12)
 	game.fx.casing(muzzle.global_position + Vector3.UP * 0.05, camera.global_basis.x)
 	var any_hit := false
 	var any_head := false
 	var any_kill := false
+	var traces: Array = []
 	for pellet in int(weapon.pellets):
 		var spread: float = weapon.spread * (0.36 if aim > 0.5 else 1.0)
 		var direction: Vector3 = (camera.global_basis * Vector3(rng.randf_range(-spread, spread), rng.randf_range(-spread, spread), -1)).normalized()
@@ -243,16 +289,25 @@ func fire() -> void:
 				break
 		if pellet < 3:
 			game.fx.tracer(muzzle.global_position, endpoint, Color(0.15, 0.85, 1) if weapon_index == 4 else Color(1, 0.64, 0.24))
+			traces.append([endpoint.x, endpoint.y, endpoint.z])
 	if any_hit:
 		game.shots_hit += 1
-		game.hud.confirm_hit(any_head, any_kill)
-		game.sound.play("headshot" if any_head else "hit", -8)
+		if is_local:
+			game.hud.confirm_hit(any_head, any_kill)
+			game.sound.play("headshot" if any_head else "hit", -8)
 		if any_kill and (weapon_index == 2 or any_head or weapon_index == 4):
 			game.hit_stop(0.045)
-	if magazines[weapon_index] == 0:
+	if game.is_lan():
+		game.lan.shot_event(self, traces, any_head, any_kill, any_hit)
+		game.lan.sync_stats()
+	if magazines[weapon_index] == 0 and is_local:
 		game.hud.toast("弹匣已空  ·  R 换弹", Color(1, 0.57, 0.24), 1.8)
 
 func begin_reload() -> void:
+	if game.is_lan():
+		game.lan.request("reload")
+		game.sound.play("reload", -7)
+		return
 	var weapon: Dictionary = WEAPONS[weapon_index]
 	if reload_timer > 0 or magazines[weapon_index] >= int(weapon.mag) or (weapon_index != 0 and reserves[weapon_index] <= 0):
 		return
@@ -261,6 +316,9 @@ func begin_reload() -> void:
 	game.sound.play("reload", -7)
 
 func switch_weapon(index: int) -> void:
+	if game.is_lan():
+		game.lan.request("switch", index)
+		return
 	if game.level_number < int(WEAPONS[index].level):
 		game.hud.toast("%s  ·  生存等级 %d 解锁" % [WEAPONS[index].short, WEAPONS[index].level], Color(0.66, 0.76, 0.77), 2.0)
 		return
@@ -281,6 +339,16 @@ func cycle_weapon(step: int) -> void:
 			return
 
 func take_damage(amount: float, origin: Vector3) -> void:
+	if game.is_lan():
+		if not game.lan.host(): return
+		if game.core.coop_damage(peer_id, amount):
+			game.lan.sync_stats()
+			if is_local:
+				game.hud.hurt = 1
+				trauma = 1
+				game.sound.play("hurt", -4)
+			game.lan.net.send_event("hurt", JSON.stringify({"id": peer_id}))
+		return
 	if invulnerability > 0 or game.state != "playing":
 		return
 	invulnerability = 0.38
@@ -295,7 +363,82 @@ func take_damage(amount: float, origin: Vector3) -> void:
 		game.die()
 
 func resupply(full: bool = false) -> void:
+	if game.is_lan():
+		if game.lan.host(): game.core.coop_resupply(peer_id, full)
+		return
 	for i in range(1, 5):
 		reserves[i] = mini(reserves[i] + int(WEAPONS[i].reserve * (0.55 if full else 0.14)), int(WEAPONS[i].reserve))
 	if full:
 		hp = minf(hp + 18, max_hp)
+
+func apply_coop_stats(data: Dictionary) -> void:
+	if data.is_empty(): return
+	var old_weapon := weapon_index
+	var old_life := life
+	life = data.life
+	hp = data.hp
+	max_hp = data.max_hp
+	damage_multiplier = data.damage_multiplier
+	resistance = data.resistance
+	reload_multiplier = data.reload_multiplier
+	speed_bonus = data.speed_bonus
+	magazines.assign(data.magazines)
+	reserves.assign(data.reserves)
+	weapon_index = int(data.weapon)
+	reload_timer = data.reload
+	reload_total = data.reload_total
+	bleed = data.bleed
+	revive_progress = data.revive
+	upgrade_points = int(data.points)
+	stamina = data.stamina
+	sprinting = data.sprinting
+	collision_layer = 2 if life == "alive" else 0
+	if old_weapon != weapon_index: _build_weapon()
+	if is_local and old_life != "alive" and life == "alive":
+		camera.position = Vector3(0, 1.65, 0)
+		camera.rotation = Vector3(aim_pitch, 0, 0)
+
+func play_gun_feedback() -> void:
+	var weapon: Dictionary = WEAPONS[weapon_index]
+	shot_timer = weapon.rate
+	recoil += weapon.kick * (0.65 if aim > 0.5 else 1.0)
+	gun_kick = weapon.kick * 2.5
+	trauma = minf(trauma + weapon.kick * 2, 0.7)
+	flash_timer = 0.05
+	game.sound.play(weapon.sound, -4)
+	game.fx.casing(muzzle.global_position, camera.global_basis.x)
+
+func _build_avatar() -> void:
+	avatar = preload("res://assets/models/city_zombie.glb").instantiate()
+	add_child(avatar)
+	avatar.rotation.y = PI
+	avatar.scale = Vector3.ONE * 1.06
+	avatar.visible = not is_local
+	avatar_animation = avatar.find_child("AnimationPlayer", true, false)
+	var armor := Forge.material(Color(0.055, 0.22, 0.32), 0.5)
+	Forge.box(avatar, Vector3(0, 1.3, 0.15), Vector3(0.52, 0.55, 0.18), armor)
+	Forge.sphere(avatar, Vector3(0, 1.76, 0), 0.18, armor).scale.y = 0.7
+	Forge.box(avatar, Vector3(0, 1.6, 0.18), Vector3(0.25, 0.21, 0.12), Forge.material(Color(0.04, 0.06, 0.07)))
+	Forge.box(avatar, Vector3(0.3, 1.12, 0.3), Vector3(0.1, 0.1, 0.6), Forge.material(Color(0.08, 0.1, 0.12), 0.7))
+	if not is_local:
+		var label := Forge.label(self, Vector3(0, 2.2, 0), player_name, Color(0.3, 0.92, 0.9), 32)
+		label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+		label.pixel_size = 0.009
+
+func _process(delta: float) -> void:
+	if not game.is_lan(): return
+	if not is_local:
+		flash_timer -= delta
+		flash.visible = flash_timer > 0
+		flash_light.visible = flash_timer > 0
+		if avatar_animation:
+			var clip := "run" if velocity.length() > 7 else "walk" if velocity.length() > 0.7 else "idle"
+			if avatar_animation.has_animation(clip) and avatar_animation.current_animation != clip:
+				avatar_animation.get_animation(clip).loop_mode = Animation.LOOP_LINEAR
+				avatar_animation.play(clip, 0.15)
+		avatar.rotation.x = 0 if life == "alive" else -1.15
+	elif life == "dead":
+		var allies: Array = game.lan.active_players()
+		if not allies.is_empty():
+			camera.global_position = allies[0].global_position + Vector3(0, 2.7, 3.5)
+			camera.look_at(allies[0].global_position + Vector3.UP)

@@ -27,6 +27,13 @@ var banner_sub := ""
 var banner_timer := 0.0
 var kill_feed: Array[Dictionary] = []
 var theme_ui: Theme
+var room_list: ItemList
+var room_records: Array = []
+var room_refresh := 0.0
+var menu_feedback: Label
+var nickname_field: LineEdit
+var address_field: LineEdit
+var room_name_field: LineEdit
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -81,6 +88,10 @@ func _process(delta: float) -> void:
 	visor.material.set_shader_parameter("clock", clock)
 	visor.material.set_shader_parameter("danger", 1.0 - clampf(game.player.hp / 35.0, 0, 1))
 	painter.queue_redraw()
+	room_refresh -= delta
+	if game.state == "menu" and is_instance_valid(room_list) and room_list.is_visible_in_tree() and room_refresh <= 0:
+		room_refresh = 0.8
+		_refresh_rooms()
 
 func _text(text: String, pos: Vector2, size: int, color: Color = WHITE) -> void:
 	painter.draw_string(font, pos, text, HORIZONTAL_ALIGNMENT_LEFT, -1, size, color)
@@ -97,7 +108,7 @@ func _bar(pos: Vector2, size: Vector2, value: float, color: Color) -> void:
 
 func _paint() -> void:
 	painter.draw_set_transform(Vector2.ZERO, 0, painter.size / BASE)
-	if game.state == "menu":
+	if game.state in ["menu", "lobby", "connecting"]:
 		return
 	var p = game.player
 	var weapon: Dictionary = p.WEAPONS[p.weapon_index]
@@ -160,6 +171,22 @@ func _paint() -> void:
 		_text("已装备" if i == p.weapon_index else "可切换" if unlocked else "LV.%d 解锁" % p.WEAPONS[i].level, pos + Vector2(10, 41), 11, CYAN if i == p.weapon_index else MUTED)
 	_text("WASD 移动  ·  SHIFT 冲刺  ·  SPACE 跳跃  ·  E 操作  ·  ESC 暂停", Vector2(409, 890), 13, MUTED)
 	_text("击杀 %03d  /  爆头 %03d" % [game.kills, game.headshots], Vector2(51, 727), 15, MUTED)
+	if game.is_lan():
+		_text("LAN 小队 %d / 4  ·  U 强化点 %d" % [game.lan.players.size(), p.upgrade_points], Vector2(51, 700), 16, CYAN)
+		var row := 0
+		for teammate in game.lan.players.values():
+			_text("%s  %s" % [teammate.player_name, "%d HP" % int(teammate.hp) if teammate.life == "alive" else "倒地 %.0fs" % teammate.bleed if teammate.life == "downed" else "同步中" if teammate.life == "spawning" else "观战"], Vector2(50, 222 + row * 25), 15, CYAN if teammate.life == "alive" else ORANGE)
+			row += 1
+		if p.life == "downed":
+			_center("你已倒地 · 等待队友救援 %.1fs" % p.bleed, 590, 24, ORANGE)
+			_bar(Vector2(570, 610), Vector2(300, 6), p.revive_progress / 3, CYAN)
+		elif p.life == "dead":
+			_center("观战中 · 下一波复活", 590, 24, MUTED)
+		else:
+			for teammate in game.lan.players.values():
+				if teammate.life == "downed" and teammate.position.distance_to(p.position) < 3.2:
+					_center("按住 E 救援 " + teammate.player_name, 590, 24, CYAN)
+					_bar(Vector2(570, 610), Vector2(300, 6), teammate.revive_progress / 3, CYAN)
 	# Adaptive crosshair and hit confirm.
 	if game.state == "playing":
 		var center := BASE * 0.5
@@ -276,14 +303,15 @@ func show_menu() -> void:
 	_clear_menu()
 	shade.color = Color(0.008, 0.023, 0.03, 0.60)
 	_label("A S H F A L L   /   S U R V I V A L   P R O T O C O L", Vector2(100, 65), 17, CYAN)
-	_label("SPATIAL REBUILD  /  v0.2.1", Vector2(1030, 65), 15, MUTED)
+	_label("RUST LAN CO-OP  /  v0.3.0", Vector2(1030, 65), 15, MUTED)
 	_label("ASHFALL", Vector2(93, 199), 105, WHITE)
 	_label("余 烬 禁 区", Vector2(104, 333), 43, ORANGE)
 	_label("城市已失守。撤离已取消。", Vector2(108, 419), 24, WHITE)
 	_label("在尸潮中成长，在枪火中活下去。\n穿过三片死地，摧毁感染源。", Vector2(108, 468), 20, MUTED)
 	_label("3D  /  三大关卡  /  尸潮与 BOSS  /  成长武装", Vector2(108, 564), 16, CYAN)
-	_button("进入禁区   →", Vector2(108, 649), Vector2(386, 66), game.start_run, true)
-	_button("退出", Vector2(511, 649), Vector2(126, 66), func(): get_tree().quit())
+	_button("单人生存   →", Vector2(108, 649), Vector2(300, 66), game.start_run, true)
+	_button("局域网合作", Vector2(425, 649), Vector2(230, 66), show_lan_browser)
+	_button("退出", Vector2(675, 649), Vector2(100, 66), func(): get_tree().quit())
 	_panel(Vector2(885, 216), Vector2(440, 470))
 	_label("行动简报", Vector2(916, 245), 27, WHITE)
 	_label("01 / 保持移动", Vector2(916, 307), 20, ORANGE)
@@ -303,7 +331,7 @@ func show_upgrade() -> void:
 	shade.color = Color(0.008, 0.023, 0.03, 0.86)
 	_label("S U R V I V O R   E V O L U T I O N", Vector2(480, 192), 17, CYAN)
 	_label("生存等级 %02d" % game.level_number, Vector2(526, 233), 44, WHITE)
-	_label("选择一项永久强化  /  战场已暂停", Vector2(502, 302), 20, MUTED)
+	_label("个人强化 · 战斗继续进行" if game.is_lan() else "选择一项永久强化  /  战场已暂停", Vector2(502, 302), 20, MUTED)
 	var names := ["致命校准", "不屈意志", "战术机动"]
 	var desc := ["所有武器伤害 +18%\n爆头与霰弹同时获得加成\n\n以攻击争取生存空间。", "生命上限 +20\n立即恢复 45 生命\n伤害减免 +4%\n\n多承受一次致命围攻。", "换弹时间 -12%\n移动速度 +0.25\n恢复部分生命与弹药\n\n永远不要停在尸群中。"]
 	for i in 3:
@@ -323,7 +351,7 @@ func show_death() -> void:
 	_clear_menu()
 	shade.color = Color(0.035, 0.008, 0.012, 0.84)
 	_label("S I G N A L   L O S T", Vector2(551, 187), 21, ORANGE)
-	_label("你倒下了。", Vector2(516, 239), 65, WHITE)
+	_label("小队覆灭。" if game.is_lan() else "你倒下了。", Vector2(516, 239), 65, WHITE)
 	_label("禁区仍在吞噬一切。下一次，走得更远。", Vector2(473, 340), 21, MUTED)
 	_panel(Vector2(342, 419), Vector2(756, 160), Color(0.49, 0.18, 0.1))
 	var stats := ["%02d" % game.wave, "%03d" % game.kills, "%02d" % game.level_number, "%02d:%02d" % [int(game.survival_time) / 60, int(game.survival_time) % 60]]
@@ -333,7 +361,8 @@ func show_death() -> void:
 		_label(titles[i], Vector2(376 + i * 187, 513), 16, MUTED, 170)
 	var accuracy := int(float(game.shots_hit) / maxi(game.shots_fired, 1) * 100)
 	_label("爆头 %d   /   命中率 %d%%   /   最佳尸潮 %02d" % [game.headshots, accuracy, game.best_wave], Vector2(482, 608), 18, MUTED)
-	_button("重新挑战   →", Vector2(431, 673), Vector2(363, 65), game.start_run, true)
+	var restart := _button("房主重新挑战" if game.is_lan() else "重新挑战   →", Vector2(431, 673), Vector2(363, 65), game.lan.start_battle if game.is_lan() else game.start_run, true)
+	restart.disabled = game.is_lan() and not game.lan.host()
 	_button("返回主菜单", Vector2(815, 673), Vector2(194, 65), game.return_to_menu)
 	_label("每一次死亡都留下纪录。记住路线，下一次突破封锁。", Vector2(451, 801), 16, MUTED)
 
@@ -346,7 +375,8 @@ func show_victory() -> void:
 	_panel(Vector2(385, 434), Vector2(670, 157), CYAN)
 	_label("03 / 03 关卡完成", Vector2(421, 453), 33, CYAN)
 	_label("击杀 %d  /  生存等级 %d  /  存活 %02d:%02d" % [game.kills, game.level_number, int(game.survival_time) / 60, int(game.survival_time) % 60], Vector2(421, 524), 21, WHITE)
-	_button("再次挑战   →", Vector2(460, 662), Vector2(326, 65), game.start_run, true)
+	var restart := _button("房主再次挑战" if game.is_lan() else "再次挑战   →", Vector2(460, 662), Vector2(326, 65), game.lan.start_battle if game.is_lan() else game.start_run, true)
+	restart.disabled = game.is_lan() and not game.lan.host()
 	_button("返回主菜单", Vector2(806, 662), Vector2(194, 65), game.return_to_menu)
 	_label("ASHFALL / 你让余烬有了明天。", Vector2(533, 793), 18, MUTED)
 
@@ -354,7 +384,8 @@ func show_pause() -> void:
 	_clear_menu()
 	shade.color = Color(0.008, 0.023, 0.03, 0.85)
 	_label("PROTOCOL / PAUSED", Vector2(550, 197), 17, CYAN)
-	_label("喘一口气。", Vector2(533, 242), 52, WHITE)
+	_label("个人菜单", Vector2(533, 242), 52, WHITE)
+	if game.is_lan(): _label("联机战场继续运行", Vector2(580, 312), 18, ORANGE)
 	_button("继续生存", Vector2(503, 369), Vector2(434, 61), game.resume_run, true)
 	_label("鼠标灵敏度", Vector2(503, 470), 18, MUTED)
 	var slider := HSlider.new()
@@ -382,6 +413,9 @@ func toast(text: String, color: Color = WHITE, duration: float = 3.0) -> void:
 	toast_text = text
 	toast_color = color
 	toast_timer = duration
+	if is_instance_valid(menu_feedback):
+		menu_feedback.text = text
+		menu_feedback.add_theme_color_override("font_color", color)
 
 func wave_banner(title: String, subtitle: String) -> void:
 	banner_title = title
@@ -393,3 +427,93 @@ func add_kill(head: bool, kind: int, reward: int) -> void:
 	kill_feed.push_front({"text": ("爆头 " if head else "击杀 ") + name + "  +%d XP" % reward, "head": head, "time": 3.0})
 	if kill_feed.size() > 5:
 		kill_feed.pop_back()
+
+func _entry(text: String, pos: Vector2, width: float, hint: String) -> LineEdit:
+	var field := LineEdit.new()
+	field.position = pos
+	field.size = Vector2(width, 46)
+	field.text = text
+	field.placeholder_text = hint
+	field.max_length = 48
+	menu.add_child(field)
+	return field
+
+func show_lan_browser() -> void:
+	_clear_menu()
+	game.state = "menu"
+	game.lan.net.start_discovery()
+	_label("L A N  /  C O - O P  P R O T O C O L", Vector2(100, 80), 19, CYAN)
+	_label("局域网合作", Vector2(100, 126), 46, WHITE)
+	_label("最多 4 人 · 共享等级 · 个人强化 · 倒地救援 · 支持战斗中加入", Vector2(100, 195), 18, MUTED)
+	_panel(Vector2(100, 244), Vector2(800, 445))
+	_label("同一局域网的房间", Vector2(123, 264), 23)
+	room_list = ItemList.new()
+	room_list.position = Vector2(123, 313)
+	room_list.size = Vector2(754, 300)
+	room_list.add_theme_font_size_override("font_size", 18)
+	room_list.item_activated.connect(func(_index: int): _join_selected())
+	menu.add_child(room_list)
+	_button("加入选中房间", Vector2(123, 627), Vector2(325, 46), _join_selected, true)
+	_button("刷新列表", Vector2(466, 627), Vector2(180, 46), _refresh_rooms)
+	_panel(Vector2(923, 244), Vector2(405, 445))
+	_label("你的昵称", Vector2(946, 264), 18, MUTED)
+	nickname_field = _entry(game.lan.nickname, Vector2(946, 302), 354, "幸存者昵称")
+	_label("创建新房间", Vector2(946, 371), 22)
+	room_name_field = _entry("余烬小队", Vector2(946, 415), 354, "房间名称")
+	_button("创建房间", Vector2(946, 477), Vector2(354, 50), func(): game.lan.create_room(room_name_field.text, nickname_field.text), true)
+	_label("或使用 IP 直接加入", Vector2(946, 552), 18, MUTED)
+	address_field = _entry("127.0.0.1", Vector2(946, 587), 215, "房主 IPv4 地址")
+	_button("直连", Vector2(1177, 587), Vector2(123, 46), func(): game.lan.join_room(address_field.text.strip_edges(), nickname_field.text))
+	menu_feedback = _label("发现端口 UDP 42043 / 游戏端口 UDP 42042", Vector2(100, 715), 17, MUTED)
+	_button("返回主菜单", Vector2(100, 789), Vector2(260, 52), show_menu)
+	_refresh_rooms()
+
+func _refresh_rooms() -> void:
+	if not is_instance_valid(room_list): return
+	var selected := room_list.get_selected_items()
+	var index: int = selected[0] if not selected.is_empty() else -1
+	room_list.clear()
+	var list = JSON.parse_string(game.lan.net.rooms_json())
+	room_records = list if list is Array else []
+	for room in room_records:
+		var status: String = "战斗中 · %s / 尸潮 %d" % [game.STAGE_NAMES[int(room.stage)], int(room.wave)] if room.playing else "等待开始"
+		room_list.add_item("%s  |  %d/4  |  %s  |  %s" % [room.name, int(room.players), status, room.ip])
+		var row := room_list.item_count - 1
+		if int(room.players) >= 4 or not room.compatible:
+			room_list.set_item_disabled(row, true)
+			room_list.set_item_tooltip(row, "房间已满" if room.compatible else "版本不匹配")
+	if index >= 0 and index < room_list.item_count: room_list.select(index)
+
+func _join_selected() -> void:
+	var selected := room_list.get_selected_items()
+	if selected.is_empty(): return
+	var room: Dictionary = room_records[selected[0]]
+	if int(room.players) < 4 and room.compatible:
+		game.lan.join_room(room.ip, nickname_field.text, int(room.port))
+
+func show_lan_lobby() -> void:
+	_clear_menu()
+	_label("L A N  /  S Q U A D  R E A D Y", Vector2(470, 153), 20, CYAN)
+	_label(game.lan.room_name, Vector2(465, 205), 43)
+	_label("房主可直接开始 · 其余玩家可在战斗中加入", Vector2(465, 278), 19, MUTED)
+	_panel(Vector2(410, 334), Vector2(620, 248))
+	var row := 0
+	for member in game.lan.members:
+		_label("%s  %s" % ["房主" if int(member.id) == 1 else "队友", member.name], Vector2(445, 363 + row * 48), 23, CYAN if int(member.id) == game.lan.local_id() else WHITE)
+		row += 1
+	var begin := _button("开始尸潮" if game.lan.host() else "等待房主开始", Vector2(410, 631), Vector2(620, 61), game.lan.start_battle, true)
+	begin.disabled = not game.lan.host()
+	_button("离开房间", Vector2(410, 714), Vector2(620, 52), game.return_to_menu)
+	menu_feedback = _label("", Vector2(410, 790), 17, MUTED)
+	if game.lan.host():
+		var ips: Array[String] = []
+		for ip in IP.get_local_addresses():
+			if ":" not in ip and not ip.begins_with("127."): ips.append(ip)
+		menu_feedback.text = "房主地址：" + ", ".join(ips) + " :42042"
+
+func show_lan_connecting(address: String) -> void:
+	_clear_menu()
+	_label("正在连接房间…", Vector2(490, 270), 43, CYAN)
+	_label(address + "  /  同步关卡、队友与尸潮", Vector2(490, 360), 21, MUTED)
+	_button("取消并返回", Vector2(490, 475), Vector2(470, 62), game.return_to_menu)
+	menu_feedback = _label("", Vector2(490, 580), 18, ORANGE)

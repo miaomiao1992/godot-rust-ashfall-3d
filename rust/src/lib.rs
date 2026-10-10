@@ -1,3 +1,5 @@
+mod coop;
+mod network;
 mod rules;
 mod tactics;
 
@@ -21,6 +23,7 @@ pub struct AshfallCore {
     run: rules::Run,
     crowd: Vec<Vector3>,
     goals: tactics::SectorGoals,
+    coop: coop::Coop,
     base: Base<RefCounted>,
 }
 
@@ -31,6 +34,7 @@ impl IRefCounted for AshfallCore {
             run: rules::Run::default(),
             crowd: Vec::new(),
             goals: tactics::SectorGoals::default(),
+            coop: coop::Coop::default(),
             base,
         }
     }
@@ -43,6 +47,7 @@ impl AshfallCore {
         self.run = rules::Run::default();
         self.crowd.clear();
         self.goals = tactics::SectorGoals::default();
+        self.coop = coop::Coop::default();
     }
 
     #[func]
@@ -69,7 +74,11 @@ impl AshfallCore {
     fn advance_wave(&mut self) -> VarDictionary {
         self.run.advance_wave();
         let mut d = self.snapshot();
-        d.set("budget", self.run.budget());
+        let party = self.coop.players.len().max(1);
+        d.set(
+            "budget",
+            (self.run.budget() as f32 * (1.0 + 0.5 * (party - 1) as f32)).round() as i32,
+        );
         d.set("boss", self.run.stage_wave() == 3);
         d.set("stage_name", rules::STAGES[self.run.stage() as usize]);
         d.set("boss_name", rules::BOSSES[self.run.stage() as usize]);
@@ -102,7 +111,8 @@ impl AshfallCore {
 
     #[func]
     fn monster_stats(&self, kind: i32, wave: i32) -> VarDictionary {
-        let m = rules::monster(kind, wave);
+        let mut m = rules::monster(kind, wave);
+        m.hp *= 1.0 + 0.3 * self.coop.players.len().max(1).saturating_sub(1) as f32;
         let mut d = VarDictionary::new();
         d.set("name", m.name);
         d.set("tier", m.tier);
@@ -131,6 +141,9 @@ impl AshfallCore {
     #[func]
     fn register_kill(&mut self, kind: i32, head: bool) -> VarDictionary {
         let (reward, levels) = self.run.reward(kind, head);
+        for player in self.coop.players.values_mut() {
+            player.points += levels;
+        }
         let mut d = self.snapshot();
         d.set("reward", reward);
         d.set("levels_gained", levels);
@@ -200,6 +213,196 @@ impl AshfallCore {
     #[func]
     fn reactor_damage_factor(&self, stage: i32) -> f32 {
         tactics::reactor_damage_factor(stage, self.goals.count())
+    }
+
+    #[func]
+    fn coop_register(&mut self, id: i64, name: GString) {
+        if let Ok(id) = u32::try_from(id) {
+            self.coop
+                .register(coop::PeerId(id), name.to_string(), self.run.level);
+        }
+    }
+    #[func]
+    fn coop_remove(&mut self, id: i64) {
+        if let Ok(id) = u32::try_from(id) {
+            self.coop.remove(coop::PeerId(id));
+        }
+    }
+    #[func]
+    fn coop_loading(&mut self, id: i64) {
+        if let Ok(id) = u32::try_from(id)
+            && let Some(p) = self.coop.players.get_mut(&coop::PeerId(id))
+        {
+            p.life = coop::Life::Spawning;
+        }
+    }
+    #[func]
+    fn coop_activate(&mut self, id: i64) {
+        if let Ok(id) = u32::try_from(id)
+            && let Some(p) = self.coop.players.get_mut(&coop::PeerId(id))
+            && p.life == coop::Life::Spawning
+        {
+            p.life = coop::Life::Alive;
+            p.invulnerability = 2.0;
+        }
+    }
+    #[func]
+    fn coop_tick(&mut self, dt: f32) {
+        self.coop.tick(dt);
+    }
+    #[func]
+    fn coop_velocity(
+        &mut self,
+        id: i64,
+        direction: Vector3,
+        sprint: bool,
+        aim: bool,
+        dt: f32,
+    ) -> Vector3 {
+        let Ok(id) = u32::try_from(id) else {
+            return Vector3::ZERO;
+        };
+        let Some(player) = self.coop.players.get_mut(&coop::PeerId(id)) else {
+            return Vector3::ZERO;
+        };
+        let (x, z) = player.movement(direction.x, direction.z, sprint, aim, dt);
+        Vector3::new(x, 0.0, z)
+    }
+    #[func]
+    fn coop_target(
+        &self,
+        ids: PackedInt64Array,
+        positions: Array<Vector3>,
+        origin: Vector3,
+    ) -> i64 {
+        let mut best = 0;
+        let mut distance = f32::INFINITY;
+        for (id, position) in ids.as_slice().iter().zip(positions.iter_shared()) {
+            let Ok(peer) = u32::try_from(*id) else {
+                continue;
+            };
+            if self
+                .coop
+                .players
+                .get(&coop::PeerId(peer))
+                .is_some_and(|p| p.life == coop::Life::Alive)
+            {
+                let d = position.distance_squared_to(origin);
+                if d < distance {
+                    distance = d;
+                    best = *id;
+                }
+            }
+        }
+        best
+    }
+    #[func]
+    fn coop_players_json(&self) -> GString {
+        serde_json::to_string(&self.coop.players.values().collect::<Vec<_>>())
+            .unwrap_or_default()
+            .as_str()
+            .into()
+    }
+    #[func]
+    fn coop_fire(&mut self, id: i64, seq: i64) -> bool {
+        let (Ok(id), Ok(seq)) = (u32::try_from(id), u64::try_from(seq)) else {
+            return false;
+        };
+        self.coop
+            .players
+            .get_mut(&coop::PeerId(id))
+            .is_some_and(|p| p.fire(seq))
+    }
+    #[func]
+    fn coop_reload(&mut self, id: i64) -> bool {
+        let Ok(id) = u32::try_from(id) else {
+            return false;
+        };
+        self.coop
+            .players
+            .get_mut(&coop::PeerId(id))
+            .is_some_and(|p| p.begin_reload())
+    }
+    #[func]
+    fn coop_switch(&mut self, id: i64, index: i32) -> bool {
+        let (Ok(id), Ok(index)) = (u32::try_from(id), usize::try_from(index)) else {
+            return false;
+        };
+        let Some(w) = rules::WEAPONS.get(index) else {
+            return false;
+        };
+        if self.run.level < w.level {
+            return false;
+        }
+        let Some(p) = self.coop.players.get_mut(&coop::PeerId(id)) else {
+            return false;
+        };
+        if p.life != coop::Life::Alive {
+            return false;
+        }
+        p.weapon = index;
+        p.reload = 0.0;
+        true
+    }
+    #[func]
+    fn coop_damage(&mut self, id: i64, amount: f32) -> bool {
+        let Ok(id) = u32::try_from(id) else {
+            return false;
+        };
+        self.coop
+            .players
+            .get_mut(&coop::PeerId(id))
+            .is_some_and(|p| p.damage(amount))
+    }
+    #[func]
+    fn coop_upgrade(&mut self, id: i64, index: i32) -> bool {
+        let Ok(id) = u32::try_from(id) else {
+            return false;
+        };
+        self.coop
+            .players
+            .get_mut(&coop::PeerId(id))
+            .is_some_and(|p| p.upgrade(index))
+    }
+    #[func]
+    fn coop_revive(&mut self, actor: i64, target: i64, distance: f32, held: bool, dt: f32) -> bool {
+        let (Ok(actor), Ok(target)) = (u32::try_from(actor), u32::try_from(target)) else {
+            return false;
+        };
+        self.coop.revive(
+            coop::PeerId(actor),
+            coop::PeerId(target),
+            distance,
+            held,
+            dt,
+        )
+    }
+    #[func]
+    fn coop_wipe(&self) -> bool {
+        self.coop.wipe()
+    }
+    #[func]
+    fn coop_respawn(&mut self) {
+        self.coop.respawn();
+    }
+    #[func]
+    fn coop_resupply(&mut self, id: i64, full: bool) {
+        if let Ok(id) = u32::try_from(id)
+            && let Some(p) = self.coop.players.get_mut(&coop::PeerId(id))
+        {
+            p.resupply(full);
+        }
+    }
+    #[func]
+    fn coop_heal(&mut self, id: i64, amount: f32) {
+        if amount.is_finite()
+            && amount > 0.0
+            && let Ok(id) = u32::try_from(id)
+            && let Some(p) = self.coop.players.get_mut(&coop::PeerId(id))
+            && p.life == coop::Life::Alive
+        {
+            p.hp = (p.hp + amount).min(p.max_hp);
+        }
     }
 
     #[func]

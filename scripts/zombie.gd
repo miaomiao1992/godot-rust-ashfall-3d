@@ -39,6 +39,11 @@ var monster_name := "感染者"
 var crowd_force := Vector3.ZERO
 var acid_step := 0
 var last_safe_position := Vector3.ZERO
+var network_proxy := false
+var net_id := 0
+var forced_variant := -1
+var network_position := Vector3.ZERO
+var network_yaw := 0.0
 
 func _ready() -> void:
 	add_to_group("zombies")
@@ -47,7 +52,7 @@ func _ready() -> void:
 	phase = randf() * TAU
 	path_timer = randf() * 0.7
 	voice_timer = randf_range(2.0, 7.0)
-	variant = randi_range(0, 3)
+	variant = forced_variant if forced_variant >= 0 else randi_range(0, 3)
 	var stats: Dictionary = game.core.monster_stats(kind, game.wave)
 	hp = stats.hp
 	speed = stats.speed
@@ -197,7 +202,7 @@ func _play_anim(name: String, playback: float = 1.0) -> void:
 			animation.play(clip, 0.15)
 
 func _physics_process(delta: float) -> void:
-	if dead or game.state != "playing":
+	if dead or network_proxy or game.state != "playing":
 		return
 	if global_position.y < game.level.surface_height(global_position) - 1.8 or absf(global_position.x) > 60 or absf(global_position.z) > 60:
 		game.recover_enemy(self)
@@ -208,7 +213,9 @@ func _physics_process(delta: float) -> void:
 	path_timer -= delta
 	voice_timer -= delta
 	flinch = maxf(flinch - delta * 4.0, 0)
-	var target: Vector3 = game.player.global_position
+	var target_player = game.target_for_enemy(global_position)
+	if target_player == null: return
+	var target: Vector3 = target_player.global_position
 	var distance := global_position.distance_to(target)
 	skill_timer -= delta
 	if kind == 4:
@@ -250,7 +257,7 @@ func _physics_process(delta: float) -> void:
 		velocity.x = knockback.x + crowd_force.x * speed * 0.65
 		velocity.z = knockback.z + crowd_force.z * speed * 0.65
 		if attack_timer <= 0:
-			game.player.take_damage(damage, global_position)
+			target_player.take_damage(damage, global_position)
 			attack_timer = 1.25 if kind != 1 else 0.85
 			flinch = 0.65
 	if charge_windup > 0:
@@ -260,7 +267,7 @@ func _physics_process(delta: float) -> void:
 		velocity.x = charge_direction.x * 16
 		velocity.z = charge_direction.z * 16
 		if distance < 3.5:
-			game.player.take_damage(42, global_position)
+			target_player.take_damage(42, global_position)
 			charge_time = 0
 	velocity.y -= 24 * delta
 	knockback = knockback.move_toward(Vector3.ZERO, delta * 12)
@@ -319,7 +326,7 @@ func _boss_skills(delta: float, target: Vector3, distance: float) -> void:
 			game.hud.toast("BOSS 正在召唤尸群", Color(1, 0.38, 0.18), 2)
 
 func take_hit(amount: float, hit_pos: Vector3, direction: Vector3, force: float) -> Dictionary:
-	if dead:
+	if dead or network_proxy:
 		return {"head": false, "killed": false}
 	var head := hit_pos.y - global_position.y > 1.5 * size_factor
 	if kind == 4:
@@ -341,3 +348,7 @@ func take_hit(amount: float, hit_pos: Vector3, direction: Vector3, force: float)
 		game.zombie_killed(self, head)
 		queue_free()
 	return {"head": head, "killed": dead}
+
+func _process(_delta: float) -> void:
+	if network_proxy and not dead:
+		_play_anim("run" if kind == 1 else walk_clip, 1.25 if kind == 1 else 1.0)
