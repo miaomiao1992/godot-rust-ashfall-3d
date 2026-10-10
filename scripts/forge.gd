@@ -1,0 +1,76 @@
+class_name Forge
+extends RefCounted
+
+static var materials: Dictionary = {}
+
+static func material(color: Color, metallic: float = 0.0, glow: float = 0.0) -> StandardMaterial3D:
+	var key := str(color) + str(metallic) + str(glow)
+	if materials.has(key):
+		return materials[key]
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = color
+	mat.roughness = 0.83 if metallic == 0 else 0.44
+	mat.metallic = metallic
+	if glow > 0:
+		mat.emission_enabled = true
+		mat.emission = color
+		mat.emission_energy_multiplier = glow
+	materials[key] = mat
+	return mat
+
+static func box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material, solid: bool = false) -> MeshInstance3D:
+	var mesh := BoxMesh.new()
+	mesh.size = size
+	var visual := MeshInstance3D.new()
+	visual.mesh = mesh
+	visual.material_override = mat
+	visual.position = pos
+	parent.add_child(visual)
+	if solid:
+		var body := StaticBody3D.new()
+		body.collision_layer = 1
+		body.collision_mask = 0
+		var shape := BoxShape3D.new()
+		shape.size = size
+		var collision := CollisionShape3D.new()
+		collision.shape = shape
+		body.add_child(collision)
+		visual.add_child(body)
+	return visual
+
+static func cylinder(parent: Node3D, pos: Vector3, radius: float, height: float, mat: Material, top: float = -1.0) -> MeshInstance3D:
+	var mesh := CylinderMesh.new()
+	mesh.bottom_radius = radius
+	mesh.top_radius = radius if top < 0 else top
+	mesh.height = height
+	mesh.radial_segments = 8
+	var visual := MeshInstance3D.new()
+	visual.mesh = mesh
+	visual.material_override = mat
+	visual.position = pos
+	parent.add_child(visual)
+	return visual
+
+static func sphere(parent: Node3D, pos: Vector3, radius: float, mat: Material) -> MeshInstance3D:
+	var mesh := SphereMesh.new()
+	mesh.radius = radius
+	mesh.height = radius * 2.0
+	mesh.radial_segments = 8
+	mesh.rings = 4
+	var visual := MeshInstance3D.new()
+	visual.mesh = mesh
+	visual.material_override = mat
+	visual.position = pos
+	parent.add_child(visual)
+	return visual
+
+static func label(parent: Node3D, pos: Vector3, text: String, color: Color, size: int = 64) -> Label3D:
+	var label := Label3D.new()
+	label.text = text
+	label.font_size = size
+	label.pixel_size = 0.014
+	label.modulate = color
+	label.outline_size = 3
+	label.position = pos
+	parent.add_child(label)
+	return label

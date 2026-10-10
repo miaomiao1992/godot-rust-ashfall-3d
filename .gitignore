@@ -1,0 +1,10 @@
+.godot/
+rust/target/
+*.log
+.DS_Store
+tools/templates/
+tools/sources/
+dist/
+__pycache__/
+*.py[cod]
+override.cfg
