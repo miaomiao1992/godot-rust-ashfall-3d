@@ -1,6 +1,7 @@
 """Inspect real PE import/export tables without relying on filename extensions."""
 from pathlib import Path
 import struct
+import sys
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -57,8 +58,9 @@ class PE:
 
 
 if __name__ == "__main__":
-    folder = ROOT / "dist" / "ASHFALL-Windows64"
-    for name in ["ASHFALL.exe", "ashfall_core.dll"]:
+    lan = "--lan" in sys.argv
+    folder = ROOT / "dist" / ("ASHFALL-LAN-Windows64" if lan else "ASHFALL-Windows64")
+    for name in ["ASHFALL-LAN.exe" if lan else "ASHFALL.exe", "ashfall_core.dll"]:
         pe = PE(folder / name)
         print(f"PE VERIFIED: {name} / Windows x64")
         imports = pe.imports()

@@ -4,8 +4,9 @@ func _initialize() -> void:
 	call_deferred("verify")
 
 func verify() -> void:
-	var pack := "res://dist/ASHFALL-Windows64/ASHFALL.pck"
+	var pack := "res://dist/ASHFALL-LAN-Windows64/ASHFALL-LAN.pck" if "--lan-pack" in OS.get_cmdline_user_args() else "res://dist/ASHFALL-Windows64/ASHFALL.pck"
 	assert(ProjectSettings.load_resource_pack(pack), "Exported PCK must mount")
+	assert(ClassDB.class_exists("LanSession"), "Rust LAN class must register")
 	print("PACK VERIFIED: mounted Windows release resources")
 	var extension := FileAccess.get_file_as_string("res://native/ashfall.gdextension")
 	print("PACKED EXTENSION CONFIG:\n", extension)
