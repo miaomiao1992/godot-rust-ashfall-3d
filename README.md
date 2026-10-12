@@ -1,6 +1,6 @@
 # ASHFALL · 余烬禁区
 
-Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.3.4 LAN 选图与表现修复版**。
+Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.4.0 LAN 三大关卡场景全面优化版**。
 当前开发分支：`feature/lan-coop`。`main` 为已发布的 v0.2.1 单机稳定版。
 完整挑战包括三个固定设计的关卡、九波尸潮、三个关底 Boss，以及成长解锁的五种武器。
 
@@ -13,8 +13,8 @@ Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.
 
 ## Windows 64 位游玩
 
-**下载局域网版：[Windows64 LAN v0.3.4 预发布版](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.3.4-lan)。**
-本地修复版：`dist/ASHFALL-LAN-Windows64-v0.3.4.zip`。完整解压后运行 `ASHFALL-LAN.exe`。
+**下载局域网版：[Windows64 LAN v0.4.0 预发布版](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.4.0-lan)。**
+本地发行版：`dist/ASHFALL-LAN-Windows64-v0.4.0.zip`。完整解压后运行 `ASHFALL-LAN.exe`。
 原单机稳定版：[Windows v0.2.1 Release](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.2.1)。
 
 1. 将 ZIP 完整解压到任意文件夹。
@@ -24,6 +24,12 @@ Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.
 运行环境：Windows 10 / 11 64 位，支持 OpenGL 3.3 的显卡，键盘和鼠标。
 
 ## 局域网合作
+
+### v0.4.0 三大关卡全面视觉与场景重构
+
+- **第一关 断桥高架**：搭建双塔四肢格构钢桁架门架、高精绿色高速指示牌与橙光可变情报屏（VMS）；沥青路面引入微表面法线扰动与修补缝、紧急制动刹车印；增加警车、防撞隔离墩、交通反光锥、高杆挑臂弯管路灯、巨型生物工程广告牌、远景摩天大楼天际线与空中余烬微粒。
+- **第二关 沉没船坞**：水体着色器升级多谐波水波法线、菲涅尔天光漫反射、水边浮沫与浮油彩斑；门座起重机细化为 A 型格构桁架与发光操纵舱；货轮扩充多层舰桥、倾斜双烟囱、雷达天线与防撞护木；运河区散落半沉货船废墟与漂浮废桶。
+- **第三关 熔心实验场**：重构中央反应堆核心，增加 16 组磁约束散热肋片、超导发光线圈与高压液氮回流管；四座气闸门配备防爆液压连杆与黄黑斑马警示带；三座冷却阀控制台增设指针式双表盘、手动应急截止阀轮并铺设地热导流管网；四角搭建高科技深冷液氮储罐塔与高空环形走廊。
 
 ### v0.3.4 起始地图与战斗表现
 

@@ -349,7 +349,7 @@ func take_hit(amount: float, hit_pos: Vector3, direction: Vector3, force: float)
 	if hp <= 0:
 		dead = true
 		collision_layer = 0
-		game.fx.retain_corpse(model, animation, global_position)
+		game.fx.retain_corpse(model, animation, global_position, direction * force, hit_pos)
 		game.zombie_killed(self, head)
 		queue_free()
 	return {"head": head, "killed": dead}

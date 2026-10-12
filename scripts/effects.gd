@@ -5,6 +5,7 @@ var rng := RandomNumberGenerator.new()
 var game
 const MAX_DEBRIS := 160
 var tracer_mesh: BoxMesh
+const CorpseScript = preload("res://scripts/corpse_ragdoll.gd")
 
 func _ready() -> void:
 	rng.randomize()
@@ -63,7 +64,7 @@ func corpse(pos: Vector3, color: Color, scale_factor: float, direction: Vector3)
 	var stain := Forge.cylinder(self, Vector3(pos.x, 0.015, pos.z), rng.randf_range(0.4, 0.75), 0.008, Forge.material(Color(0.19, 0.035, 0.03)))
 	items.append({"node": stain, "vel": Vector3.ZERO, "life": 18.0, "gravity": 0.0})
 
-func retain_corpse(model: Node3D, animation: AnimationPlayer, pos: Vector3) -> void:
+func retain_corpse(model: Node3D, animation: AnimationPlayer, pos: Vector3, impulse: Vector3 = Vector3.ZERO, hit_point: Vector3 = Vector3.ZERO) -> void:
 	var corpses := 0
 	for item in items:
 		if item.get("corpse", false):
@@ -74,30 +75,25 @@ func retain_corpse(model: Node3D, animation: AnimationPlayer, pos: Vector3) -> v
 				items[i].node.queue_free()
 				items.remove_at(i)
 				break
-	var ground := _corpse_ground(pos)
-	var body := Node3D.new()
+	var body = CorpseScript.new()
+	body.game = game
 	add_child(body)
-	body.global_position = pos
-	body.rotation.y = model.global_rotation.y
-	model.reparent(body, true)
-	# Discard walking bob/flinch on the model, keeping its authored scale.
-	model.position = Vector3.ZERO
-	model.rotation = Vector3.ZERO
-	var settle_after := 0.45
-	if animation and animation.has_animation("death"):
-		animation.speed_scale = 1
-		animation.get_animation("death").loop_mode = Animation.LOOP_NONE
-		animation.play("death", 0.08)
-		settle_after = animation.get_animation("death").length + 0.08
-	else:
-		if animation:
-			animation.pause()
-		var tween := create_tween()
-		tween.tween_property(model, "rotation:x", -PI / 2, 0.45)
-	items.append({"node": body, "model": model, "animation": animation, "vel": Vector3.ZERO, "life": 7.0, "gravity": 0.0, "corpse": true, "ground": ground, "settle_after": settle_after, "settled": false, "fall_speed": 0.0})
-	var stain := Forge.cylinder(self, ground.position + ground.normal * 0.015, rng.randf_range(0.4, 0.7), 0.008, Forge.material(Color(0.19, 0.035, 0.03)))
-	stain.basis = Basis(Quaternion(Vector3.UP, ground.normal))
-	items.append({"node": stain, "vel": Vector3.ZERO, "life": 15.0, "gravity": 0.0})
+	if impulse.length_squared() < 0.01: impulse = -model.global_basis.z.normalized() * 1.2
+	body.setup(model, animation, pos, impulse, hit_point)
+	items.append({"node": body, "model": model, "vel": Vector3.ZERO, "life": 7.0, "gravity": 0.0, "corpse": true, "ground": body.ground, "settled": false})
+	var stain := MeshInstance3D.new()
+	var plane := PlaneMesh.new()
+	plane.size = Vector2.ONE * rng.randf_range(0.9, 1.4)
+	stain.mesh = plane
+	var material := ShaderMaterial.new()
+	material.shader = preload("res://shaders/blood_stain.gdshader")
+	material.set_shader_parameter("spread", 0.1)
+	stain.material_override = material
+	stain.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(stain)
+	stain.position = body.ground.position + body.ground.normal * 0.009
+	stain.basis = Basis(Quaternion(Vector3.UP, body.ground.normal))
+	items.append({"node": stain, "vel": Vector3.ZERO, "life": 15.0, "gravity": 0.0, "blood": true})
 
 func _corpse_ground(pos: Vector3) -> Dictionary:
 	var query := PhysicsRayQueryParameters3D.create(pos + Vector3.UP * 0.5, pos + Vector3.DOWN * 100, 1)
@@ -122,42 +118,20 @@ func corpse_clearance(model: Node3D, ground: Dictionary) -> float:
 		# deformed bounds. Bake once after death to measure the actual pose.
 		var mesh: Mesh = visual.bake_mesh_from_current_skeleton_pose() if visual.skin else visual.mesh
 		if mesh == null: continue
-		if not visual.skin:
-			# Bone-mounted helmets/core ornaments can rotate arbitrarily; AABB
-			# corners would create a false underside and leave the body hovering.
-			for surface in mesh.get_surface_count():
-				var arrays: Array = mesh.surface_get_arrays(surface)
-				for vertex in arrays[Mesh.ARRAY_VERTEX]:
-					var point: Vector3 = visual.to_global(vertex)
-					lowest = minf(lowest, (point - ground.position).dot(ground.normal))
-			continue
-		var bounds := mesh.get_aabb()
-		for corner in 8:
-			var point: Vector3 = visual.to_global(bounds.get_endpoint(corner))
-			lowest = minf(lowest, (point - ground.position).dot(ground.normal))
+		# Project the actual mesh to the support plane in native SurfaceTool.
+		# A rotated AABB corner is not a real contact point on a bent ragdoll.
+		var rotation := Basis(Quaternion(ground.normal, Vector3.UP))
+		var support := Transform3D(rotation, -(rotation * ground.position))
+		for surface in mesh.get_surface_count():
+			var tool := SurfaceTool.new()
+			tool.begin(Mesh.PRIMITIVE_TRIANGLES)
+			tool.append_from(mesh, surface, support * visual.global_transform)
+			lowest = minf(lowest, tool.commit().get_aabb().position.y)
 	return lowest
 
-func _update_corpse(item: Dictionary, delta: float) -> void:
-	if item.settled: return
-	item.settle_after -= delta
-	item.fall_speed += 24 * delta
-	item.node.global_position.y = maxf(item.ground.position.y, item.node.global_position.y - item.fall_speed * delta)
-	if item.settle_after > 0 or item.node.global_position.y > item.ground.position.y + 0.001: return
-	if not item.get("prepared", false):
-		if is_instance_valid(item.animation):
-			if item.animation.has_animation("death"):
-				item.animation.seek(item.animation.get_animation("death").length, true)
-			item.animation.pause()
-		if not is_instance_valid(item.animation) or not item.animation.has_animation("death"):
-			item.model.rotation.x = -PI / 2
-		# Let Skeleton3D and BoneAttachment3D propagate the final pose before
-		# measuring; settling on the last tween frame used stale attachment bounds.
-		item.node.basis = Basis(Quaternion(Vector3.UP, item.ground.normal)) * item.node.basis
-		item.prepared = true
-		return
-	var clearance := corpse_clearance(item.model, item.ground)
-	if is_finite(clearance): item.node.global_position += item.ground.normal * (0.015 - clearance)
-	item.settled = true
+func _update_corpse(item: Dictionary, _delta: float) -> void:
+	item.settled = item.node.settled
+	item.ground = item.node.ground
 
 func _process(delta: float) -> void:
 	for i in range(items.size() - 1, -1, -1):
@@ -172,6 +146,9 @@ func _process(delta: float) -> void:
 			continue
 		if item.get("corpse", false):
 			_update_corpse(item, delta)
+			continue
+		if item.get("blood", false):
+			item.node.material_override.set_shader_parameter("spread", clampf((15.0 - item.life) / 0.85, 0.1, 1.0))
 			continue
 		if item.get("trail", false):
 			item.travelled = minf(item.travelled + 600 * delta, item.distance)
