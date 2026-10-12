@@ -57,6 +57,7 @@ var name_label: Label3D
 var team_marker: MeshInstance3D
 const SNIPER := 5
 var scope_zoom := 4.0
+var scope_latched := false
 var holding_breath := false
 var breath := 4.0
 var breath_exhausted := false
@@ -67,6 +68,12 @@ var bolt_sound_pending := false
 var bolt_handle: Node3D
 var active_grenade: int = -1
 var grenade_throw_action := ""
+var crouching := false
+var capsule_collision: CollisionShape3D
+var climbing := false
+var grenade_ready_timer := 0.0
+var grenade_release_pending := false
+var grenade_soft_toss := false
 
 func _ready() -> void:
 	WEAPONS = game.core.weapons()
@@ -78,6 +85,7 @@ func _ready() -> void:
 	collision_mask = 5
 	floor_snap_length = 0.3
 	var collision := CollisionShape3D.new()
+	capsule_collision = collision
 	var capsule := CapsuleShape3D.new()
 	capsule.radius = 0.32
 	capsule.height = 1.75
@@ -124,12 +132,21 @@ func _unhandled_input(event: InputEvent) -> void:
 		if life == "alive":
 			for action in ["shoot", "aim"]:
 				if event.is_action_pressed(action):
-					if grenade_throw_action.is_empty(): grenade_throw_action = action
+					if grenade_throw_action.is_empty() and not grenade_release_pending:
+						grenade_throw_action = action
+						grenade_ready_timer = 0.5
+						game.sound.play("pinpull", -12)
 					return
 				if event.is_action_released(action):
 					if grenade_throw_action == action:
-						throw_active_grenade(action == "aim")
+						grenade_throw_action = ""
+						grenade_release_pending = true
+						grenade_soft_toss = action == "aim"
+						if grenade_ready_timer <= 0: throw_active_grenade(grenade_soft_toss)
 					return
+	if active_grenade < 0 and weapon_index == SNIPER and life == "alive" and event.is_action_pressed("aim"):
+		scope_latched = not scope_latched
+		return
 	for i in WEAPONS.size():
 		if event.is_action_pressed("weapon_%d" % (i + 1)):
 			cancel_grenade()
@@ -178,21 +195,30 @@ func _physics_process(delta: float) -> void:
 		aim_pitch = remote.pitch
 	if game.is_lan() and (life != "alive" or (is_local and game.hud.menu.visible)): input = Vector2.ZERO
 	var direction := (transform.basis * Vector3(input.x, 0, input.y)).normalized()
-	var aiming: bool = (int(remote.get("buttons", 0)) & 4) != 0 if not is_local else Input.is_action_pressed("aim")
+	var aiming: bool = (int(remote.get("buttons", 0)) & 4) != 0 if not is_local else scope_latched if weapon_index == SNIPER and active_grenade < 0 else Input.is_action_pressed("aim")
+	var wants_crouch: bool = (int(remote.get("buttons", 0)) & 8) != 0 if not is_local else Input.is_action_pressed("crouch")
+	set_crouching(wants_crouch)
 	if stamina <= 3:
 		sprint_exhausted = true
 	elif stamina >= 25:
 		sprint_exhausted = false
 	var sprint_input: bool = (int(remote.get("buttons", 0)) & 2) != 0 if not is_local else Input.is_action_pressed("sprint")
-	sprinting = sprint_input and input.y < -0.3 and not sprint_exhausted and not aiming and reload_timer <= 0
+	sprinting = sprint_input and input.y < -0.3 and not sprint_exhausted and not aiming and reload_timer <= 0 and not crouching
 	stamina = clampf(stamina + (-28.0 if sprinting else 19.0) * delta, 0, 100)
 	var speed := (9.2 if sprinting else 3.7 if aiming else 6.0) + speed_bonus
 	var desired := direction * speed
 	if game.is_lan() and game.lan.host():
 		desired = game.core.coop_velocity(peer_id, direction, sprint_input and input.y < -0.3, aiming, delta)
+	if crouching: desired *= 0.45
 	velocity.x = move_toward(velocity.x, desired.x, delta * 32)
 	velocity.z = move_toward(velocity.z, desired.z, delta * 32)
-	if not is_on_floor():
+	var ladder: AABB = game.level.ladder_at(position) if game.level.has_method("ladder_at") else AABB()
+	climbing = ladder.size != Vector3.ZERO and absf(input.y) > 0.1 and life == "alive"
+	if climbing:
+		velocity.y = -input.y * 3.0
+		velocity.x = direction.x * 1.8
+		velocity.z = direction.z * 1.8
+	elif not is_on_floor():
 		velocity.y -= 24 * delta
 	elif ((int(remote.get("buttons", 0)) & 1) != 0 if not is_local else Input.is_action_just_pressed("jump")) and life == "alive":
 		velocity.y = 7.2
@@ -208,6 +234,7 @@ func _physics_process(delta: float) -> void:
 			if Input.is_action_pressed("jump"): buttons |= 1
 			if Input.is_action_pressed("sprint"): buttons |= 2
 			if aiming: buttons |= 4
+			if crouching: buttons |= 8
 			if Input.is_action_pressed("interact"): buttons |= 16
 		game.lan.send_input(delta, input.x, input.y, rotation.y, aim_pitch, buttons)
 	var moving := Vector2(velocity.x, velocity.z).length() > 0.7 and is_on_floor()
@@ -232,7 +259,25 @@ func _physics_process(delta: float) -> void:
 	update_scope(delta, aiming, sprint_input)
 	var target_fov := rad_to_deg(2 * atan(tan(deg_to_rad(82.0) * 0.5) / scope_zoom)) if scope_active() else 61.0 if aiming and weapon_index != SNIPER else 91.0 if sprinting else 82.0
 	camera.fov = lerpf(camera.fov, target_fov, minf(delta * 12, 1))
-	camera.position.y = 1.65 + sin(bob) * (0.028 if moving else 0.0)
+	camera.position.y = (0.72 if crouching else 1.65) + sin(bob) * (0.028 if moving else 0.0)
+
+func set_crouching(value: bool) -> void:
+	if capsule_collision == null: return
+	if not value and crouching:
+		var shape := CapsuleShape3D.new()
+		shape.radius = 0.32
+		shape.height = 1.75
+		var query := PhysicsShapeQueryParameters3D.new()
+		query.shape = shape
+		query.transform = Transform3D(Basis.IDENTITY, global_position + Vector3.UP * 0.88)
+		query.collision_mask = 1
+		query.exclude = [get_rid()]
+		if not get_world_3d().direct_space_state.intersect_shape(query, 1).is_empty(): return
+	crouching = value
+	var capsule: CapsuleShape3D = capsule_collision.shape
+	capsule.height = 0.85 if crouching else 1.75
+	capsule_collision.position.y = 0.43 if crouching else 0.88
+	camera.position.y = 0.72 if crouching else 1.65
 
 func _update_weapon_pose() -> void:
 	camera.rotation = Vector3(aim_pitch - recoil + scope_sway.y + rng.randf_range(-1, 1) * trauma * 0.022, scope_sway.x + rng.randf_range(-1, 1) * trauma * 0.018, rng.randf_range(-1, 1) * trauma * 0.011)
@@ -347,23 +392,28 @@ func select_grenade(kind: int) -> void:
 		game.hud.toast("投掷物耗尽", Color(1, 0.4, 0.4), 1.5)
 		return
 	active_grenade = kind
+	scope_latched = false
 	grenade_throw_action = ""
+	grenade_release_pending = false
+	grenade_ready_timer = 0
 	game.hud.toast("按住鼠标准备 · 松开左键高抛 / 右键轻掷", Color(0.3, 0.9, 1.0), 1.8)
 	_build_weapon()
 
 func cancel_grenade() -> void:
 	grenade_throw_action = ""
+	grenade_release_pending = false
+	grenade_ready_timer = 0
 	if active_grenade >= 0:
 		active_grenade = -1
 		_build_weapon()
 
 func throw_active_grenade(soft_toss: bool = false) -> void:
 	grenade_throw_action = ""
+	grenade_release_pending = false
 	if active_grenade < 0: return
 	var kind := active_grenade
 	active_grenade = -1
-	var pitch_adj: float = camera.rotation.x + (0.05 if soft_toss else 0.14)
-	game.lan.request("grenade", kind, rotation.y + camera.rotation.y, pitch_adj)
+	game.lan.request("grenade", kind + (3 if soft_toss else 0), rotation.y + camera.rotation.y, camera.rotation.x)
 	shot_timer = 0.5
 	gun_kick = 0.12
 	recoil += 0.05
@@ -470,6 +520,7 @@ func fire(sequence: int = 0) -> void:
 		game.hud.toast("弹匣已空  ·  R 换弹", Color(1, 0.57, 0.24), 1.8)
 
 func begin_reload() -> void:
+	scope_latched = false
 	if game.is_lan():
 		game.lan.request("reload")
 		game.sound.play("reload", -7)
@@ -482,6 +533,7 @@ func begin_reload() -> void:
 	game.sound.play("reload", -7)
 
 func switch_weapon(index: int) -> void:
+	if index != weapon_index: scope_latched = false
 	if game.is_lan():
 		game.lan.request("switch", index)
 		return
@@ -559,7 +611,14 @@ func apply_coop_stats(data: Dictionary) -> void:
 	stamina = data.stamina
 	sprinting = data.sprinting
 	collision_layer = 2 if life == "alive" else 0
-	if old_weapon != weapon_index: _build_weapon()
+	if is_instance_valid(team_marker): team_marker.visible = life == "alive"
+	if is_instance_valid(name_label): name_label.visible = life != "dead"
+	if life != "alive": grenade_throw_action = ""
+	if life != "alive": grenade_release_pending = false
+	if life != "alive": scope_latched = false
+	if old_weapon != weapon_index:
+		scope_latched = false
+		_build_weapon()
 	if is_local and old_life != "alive" and life == "alive":
 		camera.position = Vector3(0, 1.65, 0)
 		camera.rotation = Vector3(aim_pitch, 0, 0)
@@ -622,12 +681,18 @@ func _build_avatar() -> void:
 			team_marker.scale = Vector3(1.15, 0.22, 0.95)
 
 func _process(delta: float) -> void:
+	grenade_ready_timer = maxf(0, grenade_ready_timer - delta)
+	if grenade_release_pending:
+		if game.state != "playing" or life != "alive" or game.hud.menu.visible:
+			grenade_release_pending = false
+		elif grenade_ready_timer <= 0:
+			throw_active_grenade(grenade_soft_toss)
 	bolt_timer = maxf(bolt_timer - delta, 0)
 	if bolt_sound_pending and bolt_timer < 1.1:
 		bolt_sound_pending = false
 		if is_local: game.sound.play("bolt", -12)
 		else: game.sound.positional("bolt", global_position, -17)
-	if is_local and weapon_index == SNIPER: rig.visible = not scope_active()
+	if is_local: rig.visible = life == "alive" and not scope_active()
 	flash_timer = maxf(flash_timer - delta, 0)
 	# Always display a newly received shot for at least one rendered frame,
 	# even when a slow frame is longer than the flash's nominal lifetime.

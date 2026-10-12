@@ -58,6 +58,7 @@ func _initialize() -> void:
 	Input.action_release("shoot")
 	ev_shoot.pressed = false
 	p._unhandled_input(ev_shoot)
+	await create_timer(0.6).timeout
 	assert(p.active_grenade == -1, "Throwing should switch back to gun")
 	assert(p.grenade_throw_action.is_empty())
 	print("Left mouse holds grenade; release throws and restores weapon")
@@ -74,6 +75,7 @@ func _initialize() -> void:
 	assert(p.active_grenade == 0, "Holding right mouse must keep the grenade in hand")
 	ev_aim.pressed = false
 	p._unhandled_input(ev_aim)
+	await create_timer(0.6).timeout
 	assert(p.active_grenade == -1, "Right mouse release throws")
 	p.select_grenade(1)
 	ev_shoot.pressed = true

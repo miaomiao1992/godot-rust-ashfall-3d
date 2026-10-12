@@ -346,15 +346,16 @@ func _button(text: String, pos: Vector2, size: Vector2, callback: Callable, prim
 	button.size = size
 	button.mouse_default_cursor_shape = Control.CURSOR_POINTING_HAND
 	button.add_theme_font_size_override("font_size", 22)
-	button.add_theme_color_override("font_color", Color(0.02, 0.06, 0.065) if primary else WHITE)
+	for color_name in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color"]:
+		button.add_theme_color_override(color_name, Color(0.85, 0.89, 0.88))
 	for state_name in ["normal", "hover", "pressed", "focus"]:
 		var style := StyleBoxFlat.new()
-		style.bg_color = CYAN if primary else Color(0.07, 0.15, 0.17)
+		style.bg_color = Color(0.075, 0.16, 0.17) if primary else Color(0.055, 0.10, 0.12)
 		if state_name == "hover":
-			style.bg_color = Color(0.44, 1, 0.91) if primary else Color(0.11, 0.27, 0.29)
+			style.bg_color = Color(0.14, 0.19, 0.19)
 		if state_name == "pressed":
-			style.bg_color = ORANGE if primary else Color(0.1, 0.2, 0.22)
-		style.border_color = CYAN if primary else Color(0.23, 0.4, 0.41)
+			style.bg_color = Color(0.10, 0.14, 0.15)
+		style.border_color = Color(0.55, 0.36, 0.19) if state_name in ["hover", "focus"] else Color(0.21, 0.39, 0.39) if primary else Color(0.19, 0.28, 0.30)
 		style.set_border_width_all(1)
 		button.add_theme_stylebox_override(state_name, style)
 	button.pressed.connect(callback)
@@ -365,16 +366,16 @@ func show_menu() -> void:
 	_clear_menu()
 	shade.color = Color(0.008, 0.023, 0.03, 0.60)
 	_label("A S H F A L L   /   S U R V I V A L   P R O T O C O L", Vector2(100, 65), 17, CYAN)
-	_label("RUST LAN / v0.6.0", Vector2(1030, 65), 15, MUTED)
+	_label("RUST LAN / v1.0.0", Vector2(1030, 65), 15, MUTED)
 	_label("ASHFALL", Vector2(93, 199), 105, WHITE)
 	_label("余 烬 禁 区", Vector2(104, 333), 43, ORANGE)
 	_label("城市已失守。撤离已取消。", Vector2(108, 419), 24, WHITE)
 	_label("在尸潮中成长，在枪火中活下去。\n穿过三片死地，摧毁感染源。", Vector2(108, 468), 20, MUTED)
 	_label("3D  /  三大关卡  /  尸潮与 BOSS  /  成长武装", Vector2(108, 564), 16, CYAN)
-	_button("单人生存   →", Vector2(108, 649), Vector2(300, 66), game.start_run, true)
-	_button("局域网合作", Vector2(425, 649), Vector2(230, 66), show_lan_browser)
-	_button("仓库 PvP", Vector2(675, 649), Vector2(190, 66), show_lan_browser.bind("pvp"))
-	_button("退出", Vector2(675, 729), Vector2(100, 48), func(): get_tree().quit())
+	_button("单人生存   →", Vector2(108, 625), Vector2(350, 60), game.start_run, true)
+	_button("局域网合作", Vector2(478, 625), Vector2(350, 60), show_lan_browser)
+	_button("仓库 PvP", Vector2(108, 703), Vector2(350, 60), show_lan_browser.bind("pvp"))
+	_button("退出", Vector2(478, 703), Vector2(350, 60), func(): get_tree().quit())
 	_panel(Vector2(885, 216), Vector2(440, 470))
 	_label("行动简报", Vector2(916, 245), 27, WHITE)
 	_label("01 / 保持移动", Vector2(916, 307), 20, ORANGE)
@@ -385,7 +386,7 @@ func show_menu() -> void:
 	_label("LV.2 冲锋枪  ·  LV.3 霰弹枪\nLV.5 突击步枪  ·  LV.7 穿透电磁炮\nLV.8 狙击枪 / 4×·8× 瞄准镜", Vector2(916, 517), 16, MUTED)
 	_label("04 / 突破三片死地", Vector2(916, 588), 20, ORANGE)
 	_label("断桥高架 → 沉没船坞 → 熔心实验场\n折线悬桥 / 水道码头 / 环形核心大厅", Vector2(916, 624), 15, MUTED)
-	_label("个人纪录  /  尸潮 %02d   ·   击杀 %03d" % [game.best_wave, game.best_kills], Vector2(108, 770), 16, MUTED)
+	_label("个人纪录  /  尸潮 %02d   ·   击杀 %03d" % [game.best_wave, game.best_kills], Vector2(108, 797), 16, MUTED)
 	_label("WASD 移动  /  鼠标 射击与瞄准  /  1–6、滚轮 切换武器  /  R 换弹", Vector2(108, 831), 15, MUTED)
 	_label("THREE SECTORS. ONE SURVIVOR.", Vector2(1050, 831), 13, CYAN)
 
@@ -568,12 +569,33 @@ func show_lan_lobby() -> void:
 	for member in game.lan.members:
 		_label("%s  %s" % ["房主" if int(member.id) == 1 else "队友", member.name], Vector2(445, 363 + row * 48), 23, CYAN if int(member.id) == game.lan.local_id() else WHITE)
 		row += 1
-	_label("起始地图", Vector2(410, 590), 18, MUTED)
+	_label("起始地图", Vector2(410, 590), 18, WHITE)
 	var maps := OptionButton.new()
 	maps.name = "LobbyMapChoice"
 	maps.position = Vector2(550, 586)
 	maps.size = Vector2(480, 38)
 	maps.add_theme_font_size_override("font_size", 18)
+	for color_name in ["font_color", "font_hover_color", "font_pressed_color", "font_focus_color", "font_disabled_color"]:
+		maps.add_theme_color_override(color_name, Color(0.83, 0.88, 0.88))
+	for state_name in ["normal", "hover", "pressed", "disabled", "focus"]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.14, 0.21, 0.24) if state_name == "hover" else Color(0.10, 0.16, 0.19)
+		style.border_color = Color(0.40, 0.52, 0.54)
+		style.set_border_width_all(1)
+		style.content_margin_left = 14
+		maps.add_theme_stylebox_override(state_name, style)
+	var popup := maps.get_popup()
+	popup.add_theme_color_override("font_color", Color(0.85, 0.90, 0.90))
+	popup.add_theme_color_override("font_hover_color", Color(0.90, 0.92, 0.89))
+	popup.add_theme_font_size_override("font_size", 18)
+	var popup_panel := StyleBoxFlat.new()
+	popup_panel.bg_color = Color(0.10, 0.16, 0.19)
+	popup_panel.border_color = Color(0.32, 0.46, 0.48)
+	popup_panel.set_border_width_all(1)
+	popup.add_theme_stylebox_override("panel", popup_panel)
+	var popup_hover := StyleBoxFlat.new()
+	popup_hover.bg_color = Color(0.19, 0.26, 0.28)
+	popup.add_theme_stylebox_override("hover", popup_hover)
 	for title in game.STAGE_NAMES: maps.add_item(title)
 	maps.select(game.lan.start_stage)
 	maps.disabled = not game.lan.host()

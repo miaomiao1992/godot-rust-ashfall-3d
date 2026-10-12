@@ -242,6 +242,9 @@ func process(delta: float) -> void:
 					if game.state == "lobby": game.hud.show_lan_lobby()
 			"detonate":
 				if not host() and data is Dictionary: ordnance.show_detonation(data)
+			"assault_break":
+				if not host() and data is Dictionary and game.level.has_method("apply_brushes"):
+					game.level.apply_brushes([int(data.id)])
 			"pvp_kill":
 				if not host() and data is Dictionary: game.hud.add_pvp_kill(data)
 			"room_closed", "disconnected", "error":
@@ -358,8 +361,10 @@ func apply_action(id: int, action: Dictionary) -> void:
 	var p = players[id]
 	match action.kind:
 		"grenade":
-			if mode == "pvp" and game.core.pvp_throw(id, int(action.arg), int(action.seq)):
-				ordnance.throw_grenade(p, int(action.arg), float(action.yaw), float(action.pitch))
+			var grenade_arg := int(action.arg)
+			var kind := grenade_arg % 3
+			if mode == "pvp" and grenade_arg >= 0 and grenade_arg < 6 and game.core.pvp_throw(id, kind, int(action.seq)):
+				ordnance.throw_grenade(p, kind, float(action.yaw), float(action.pitch), grenade_arg >= 3)
 		"fire":
 			var saved_sway: Vector2 = p.scope_sway
 			p.scope_sway = Vector2.ZERO
@@ -414,7 +419,7 @@ func make_snapshot() -> Dictionary:
 	var pawn_states: Array = []
 	for id in players:
 		var p = players[id]
-		pawn_states.append({"id": id, "name": p.player_name, "pos": vec(p.position), "yaw": p.rotation.y, "pitch": p.aim_pitch, "vel": vec(p.velocity), "stats": stats.get(id, {})})
+		pawn_states.append({"id": id, "name": p.player_name, "pos": vec(p.position), "yaw": p.rotation.y, "pitch": p.aim_pitch, "vel": vec(p.velocity), "crouch": p.crouching, "stats": stats.get(id, {})})
 	var enemies: Array = []
 	for enemy in game.get_tree().get_nodes_in_group("zombies"):
 		if not enemy.dead and not enemy.is_queued_for_deletion():
@@ -426,7 +431,8 @@ func make_snapshot() -> Dictionary:
 	for item in game.pickups: pickups.append({"id": item.nid, "pos": vec(item.node.position), "kind": item.kind})
 	var valves: Array = []
 	for terminal in game.level.terminals: valves.append(terminal.activated)
-	return {"epoch": epoch, "tick": snapshot_tick, "mode": mode, "pvp": pvp_state, "battle": game.battle.snapshot(), "ordnance": ordnance.snapshot(), "start_stage": start_stage, "stage": game.stage_index, "wave": game.wave, "state": game.state, "time": game.survival_time, "spawn_left": game.spawn_left, "alive": game.alive, "next_wave": game.next_wave, "level": game.level_number, "xp": game.xp, "xp_needed": game.xp_needed, "kills": game.kills, "headshots": game.headshots, "objective": game.objective_count, "valves": valves, "players": pawn_states, "enemies": enemies, "hazards": hazards, "pickups": pickups}
+	var broken_brushes: Array = game.level.snapshot_brushes() if game.level.has_method("snapshot_brushes") else []
+	return {"epoch": epoch, "tick": snapshot_tick, "mode": mode, "pvp": pvp_state, "battle": game.battle.snapshot(), "ordnance": ordnance.snapshot(), "assault_broken": broken_brushes, "start_stage": start_stage, "stage": game.stage_index, "wave": game.wave, "state": game.state, "time": game.survival_time, "spawn_left": game.spawn_left, "alive": game.alive, "next_wave": game.next_wave, "level": game.level_number, "xp": game.xp, "xp_needed": game.xp_needed, "kills": game.kills, "headshots": game.headshots, "objective": game.objective_count, "valves": valves, "players": pawn_states, "enemies": enemies, "hazards": hazards, "pickups": pickups}
 
 func apply_snapshot(s: Dictionary) -> void:
 	if int(s.tick) <= last_tick and int(s.epoch) == client_epoch: return
@@ -441,6 +447,7 @@ func apply_snapshot(s: Dictionary) -> void:
 		game._build_run()
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		game.hud.hide_overlay()
+	if game.level.has_method("apply_brushes"): game.level.apply_brushes(s.get("assault_broken", []))
 	game.wave = int(s.wave)
 	game.survival_time = s.time
 	game.spawn_left = int(s.spawn_left)
@@ -465,6 +472,7 @@ func apply_snapshot(s: Dictionary) -> void:
 		p.network_position = unvec(data.pos)
 		p.network_yaw = data.yaw
 		if id != local_id(): p.aim_pitch = float(data.pitch)
+		if id != local_id(): p.set_crouching(bool(data.get("crouch", false)))
 		p.velocity = unvec(data.vel)
 		stats[id] = data.stats
 		p.apply_coop_stats(data.stats)
@@ -612,9 +620,11 @@ func place_pvp_player(id: int) -> void:
 	p.position = game.level.spawn_for(int(f.team), ids.find(id))
 	p.network_position = p.position
 	p.velocity = Vector3.ZERO
-	p.rotation.y = 0 if int(f.team) == 0 else PI
+	p.rotation.y = game.level.spawn_yaw(int(f.team), ids.find(id)) if game.level.has_method("spawn_yaw") else 0 if int(f.team) == 0 else PI
 	p.network_yaw = p.rotation.y
 	p.aim_pitch = 0
+	p.crouching = false
+	p.set_crouching(false)
 	p.camera.position = Vector3(0, 1.65, 0)
 	p.camera.rotation = Vector3.ZERO
 	p.recoil = 0

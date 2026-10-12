@@ -82,6 +82,14 @@ func run() -> void:
 	p.set_process(false)
 	victim.set_process(false)
 	game.hud.root.visible = false
+	# Isolate synthetic barriers from the new original-map walls. This test
+	# exercises penetration physics; real map collision has its own traversal test.
+	game.level.navigation.visible = false
+	for brush in game.level.brush_nodes.values():
+		brush.collision_layer = 0
+		for child in brush.get_children():
+			if child is StaticBody3D: child.collision_layer = 0
+	Forge.box(game.world, Vector3(0, -0.5, 0), Vector3(70, 1, 70), Forge.material(Color(0.1, 0.1, 0.1)), true)
 	await reset_fighters()
 	await barrier(0.22, "wood")
 	await shoot(0)
@@ -192,7 +200,11 @@ func run() -> void:
 		await process_frame
 		await RenderingServer.frame_post_draw
 		baseline = red_width(root.get_texture().get_image())
-	Input.action_press("aim")
+	game.hud.hide_overlay()
+	var aim_click := InputEventAction.new()
+	aim_click.action = "aim"
+	aim_click.pressed = true
+	p._unhandled_input(aim_click)
 	p.set_physics_process(true)
 	await frames(65)
 	check(p.scope_active(), "right mouse engages sniper scope")

@@ -50,16 +50,24 @@ func process(delta: float) -> void:
 		var distance := line.length()
 		# Roof enemies are pursued via the bot's own access ramp.
 		var goal: Vector3 = target.position
-		if target.position.y > 9 and p.position.y < 9:
+		if game.level.spatial_type != "cs_assault_16" and target.position.y > 9 and p.position.y < 9:
 			# Routes are blue (-z) then red (+z), whereas team zero is red.
 			var route: Dictionary = game.level.roof_routes[1 - p.team]
 			goal = route.entry if p.position.distance_to(route.entry) > 3 and p.position.y < 0.5 else route.exit
-		elif p.position.y > 9 and target.position.y < 9:
+		elif game.level.spatial_type != "cs_assault_16" and p.position.y > 9 and target.position.y < 9:
 			var route: Dictionary = game.level.roof_routes[1 - p.team]
 			goal = route.exit if Vector2(p.position.x - route.exit.x, p.position.z - route.exit.z).length() > 2 else route.entry
 		var move := Vector3.ZERO
+		var climb_input := 0.0
 		if not visible or distance > 17:
-			if p.position.y > 0.8 or goal.y > 9:
+			if game.level.spatial_type == "cs_assault_16":
+				var path: PackedVector3Array = game.level.route(p.position, goal)
+				if path.size() > 1:
+					var next := path[1]
+					move = Vector3(next.x - p.position.x, 0, next.z - p.position.z).normalized()
+					if game.level.ladder_at(p.position).size != Vector3.ZERO and absf(next.y - p.position.y) > 0.4:
+						climb_input = -signf(next.y - p.position.y)
+			elif p.position.y > 0.8 or goal.y > 9:
 				move = Vector3(goal.x - p.position.x, 0, goal.z - p.position.z).normalized()
 			else:
 				var start_cell: Vector2i = game.level.nearest_open(game.level.world_cell(p.position))
@@ -77,7 +85,10 @@ func process(delta: float) -> void:
 		var yaw := atan2(-line.x, -line.z)
 		var pitch := atan2(line.y, Vector2(line.x, line.z).length())
 		var local_move := Basis(Vector3.UP, yaw).inverse() * move
+		if climb_input != 0: local_move.z = climb_input
 		brain.input = {"x": local_move.x, "z": local_move.z, "yaw": yaw + sin(tick * 1.1 + float(id % 5)) * 0.012, "pitch": pitch, "buttons": 4 | (1 if brain.stuck > 0.8 else 0)}
+		var ceiling := PhysicsRayQueryParameters3D.create(p.position + Vector3.UP * 0.5, p.position + Vector3.UP * 1.8, 1)
+		if not game.world.get_world_3d().direct_space_state.intersect_ray(ceiling).is_empty(): brain.input.buttons |= 8
 		if int(brain.target) != target.peer_id: brain.reaction = 0.0
 		brain.target = target.peer_id
 		brain.reaction = brain.reaction + 0.18 if visible else 0.0

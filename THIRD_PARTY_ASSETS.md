@@ -1,5 +1,17 @@
 # Third-party assets / 第三方资产
 
+## Counter-Strike 1.6 cs_assault / Supply Station Assault
+
+- Map author / 地图作者: **Lari Muuriaisniemi (CryptR)**.
+- Original game and shared textures: **Valve / Counter-Strike / Half-Life**; original rights retained.
+- Reference: https://counterstrike.fandom.com/wiki/Assault
+- Map/WAD mirror: https://www.csboost.eu/downloads/maps/cs_assault.bsp and https://www.csboost.eu/downloads/cs_assault.wad
+- Shared texture mirror: https://en.ds-servers.com/goldsrc-res/r7/halflife.wad
+- BSP SHA256: `2457e165671e3830ec91471dea6f471440747cbb4b1fa1b6a85cddc30adb3648`.
+- Used as: `assets/maps/cs_assault/`, converted geometry, lightmap atlas and 182 texture images.
+- Changes: GoldSrc-to-Godot axis conversion, 40 units/metre scaling, triangulation, collision/material routing, navigation, dynamic sky and PvP integration. Hostage entities and rescue objectives are omitted.
+- Conversion: `python3 tools/convert_assault.py <cs_assault.bsp> --wad <halflife.wad> --wad <cs_assault.wad> --output assets/maps/cs_assault` (Pillow required).
+
 ## Male City Zombie, Ready for use in Game Engines
 
 - Author / 作者: **Rikindle3D**

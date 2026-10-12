@@ -17,6 +17,7 @@ func authority() -> bool:
 func setup() -> void:
 	rng.seed = 77291
 	if not game.is_pvp(): return
+	if game.level.spatial_type == "cs_assault_16": return
 	# Mirrored placements sit off the routes, pipe mouths, ramps and spawns.
 	for side in [-1.0, 1.0]:
 		for x in [-21.0, 21.0]:
@@ -48,6 +49,7 @@ func impact(hit: Dictionary, direction: Vector3, damage: float, force: float) ->
 	var kind := 1 if surface == "metal" else 2 if surface == "wood" else 0
 	var data := make_mark(hit.position, hit.normal, kind, 0.18 if kind == 0 else 0.14, 100, body)
 	impact_visual(hit.position, hit.normal, surface)
+	if body.has_method("receive_damage"): body.receive_damage(damage)
 	if body.has_method("shot"): body.shot(damage, hit.position, direction, force)
 	return data
 

@@ -5,6 +5,7 @@ var game
 var items: Dictionary = {}
 var next_id := 1
 var detonations := 0
+const SMOKE_SECONDS := 25.0
 
 func _init(owner) -> void:
 	game = owner
@@ -16,22 +17,29 @@ func clear() -> void:
 
 func _visual(kind: int, smoke: bool = false) -> Node3D:
 	if smoke:
-		var mat := Forge.material(Color(0.44, 0.49, 0.52, 0.94), 0, 0, 1)
-		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-		var smoke_node := Forge.sphere(game.world, Vector3.ZERO, 4.5, mat)
-		smoke_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		var smoke_node := Node3D.new()
+		game.world.add_child(smoke_node)
+		for i in 12:
+			var mat := ShaderMaterial.new()
+			mat.shader = preload("res://shaders/grenade_smoke.gdshader")
+			mat.set_shader_parameter("seed", float(i) * 3.71)
+			var angle := float(i) * TAU / 12
+			var puff := Forge.sphere(smoke_node, Vector3(cos(angle) * 2.3, sin(float(i) * 2.1) * 0.8, sin(angle) * 2.3), 2.3, mat, 12, 8)
+			puff.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		return smoke_node
 	return GrenadeModel.build(game.world, kind, false)
 
-func throw_grenade(p, kind: int, yaw: float, pitch: float) -> void:
-	var direction := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, clampf(pitch, -1.5, 1.5)) * Vector3.FORWARD
-	var origin: Vector3 = p.global_position + Vector3.UP * 1.55
+func throw_grenade(p, kind: int, yaw: float, pitch: float, soft: bool = false) -> void:
+	# CS 1.6 pitch-dependent release: 600 units/s level, capped at 750.
+	var degrees := rad_to_deg(clampf(pitch, -1.5, 1.5))
+	var mapped := 10.0 + degrees * (80.0 / 90.0 if degrees >= 0 else 100.0 / 90.0)
+	var direction := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, deg_to_rad(mapped)) * Vector3.FORWARD
+	var origin: Vector3 = p.global_position + Vector3.UP * (0.72 if p.crouching else 1.55)
 	var start: Vector3 = origin + direction * 0.5
 	var hit: Dictionary = game.world.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(origin, start, 1))
 	if not hit.is_empty(): start = hit.position + hit.normal * 0.15
-	var p_vel: Vector3 = p.velocity * 0.45 if "velocity" in p else Vector3.ZERO
-	var throw_vel: Vector3 = direction * 19.5 + Vector3.UP * 3.2 + p_vel
+	var p_vel: Vector3 = p.velocity
+	var throw_vel: Vector3 = direction * minf((90.0 + mapped) * 6.0, 750.0) / 40.0 * (0.4 if soft else 1.0) + p_vel
 	var rng: RandomNumberGenerator = game.rng if is_instance_valid(game) and "rng" in game else RandomNumberGenerator.new()
 	var spin := Vector3(rng.randf_range(6.0, 12.0), rng.randf_range(-3.0, 3.0), rng.randf_range(4.0, 8.0))
 	var item := {
@@ -42,7 +50,7 @@ func throw_grenade(p, kind: int, yaw: float, pitch: float) -> void:
 		"vel": throw_vel,
 		"rot": Vector3.ZERO,
 		"spin": spin,
-		"life": 2.2,
+		"life": 1.5,
 		"smoke": false,
 		"on_ground": false,
 		"bounces": 0
@@ -61,7 +69,19 @@ func process(delta: float) -> void:
 		item.life -= delta
 		for step in steps:
 			if item.smoke: continue
-			item.vel += Vector3.DOWN * 15.0 * dt
+			if item.on_ground:
+				var support: Dictionary = game.world.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(item.pos, item.pos + Vector3.DOWN * 0.16, 1))
+				if not support.is_empty() and support.normal.y > 0.65:
+					item.vel.y = 0
+					item.vel = item.vel.move_toward(Vector3.ZERO, 4.8 * dt)
+					var rolling_end: Vector3 = item.pos + item.vel * dt
+					var obstacle: Dictionary = game.world.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(item.pos, rolling_end, 1))
+					if obstacle.is_empty(): item.pos = rolling_end
+					else: item.vel = Vector3.ZERO
+					if item.vel.length() > 0.05: item.rot += support.normal.cross(item.vel.normalized()) * item.vel.length() / 0.08 * dt
+					continue
+				item.on_ground = false
+			item.vel += Vector3.DOWN * 10.0 * dt
 			item.vel *= (1.0 - 0.02 * dt)
 			var end: Vector3 = item.pos + item.vel * dt
 			var hit: Dictionary = game.world.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(item.pos, end, 1))
@@ -74,7 +94,7 @@ func process(delta: float) -> void:
 				var v_normal: float = item.vel.dot(normal)
 				var v_tangent: Vector3 = item.vel - normal * v_normal
 				item.pos = hit.position + normal * 0.08
-				if absf(v_normal) > 1.2:
+				if absf(v_normal) > (1.8 if normal.y > 0.65 else 1.2):
 					var restitution: float = 0.45
 					item.vel = v_tangent * 0.82 - normal * (v_normal * restitution)
 					var rng: RandomNumberGenerator = game.rng if is_instance_valid(game) and "rng" in game else RandomNumberGenerator.new()
@@ -95,6 +115,9 @@ func process(delta: float) -> void:
 		item.node.rotation = item.rot
 		if item.life <= 0:
 			if not item.smoke:
+				if item.kind == 2 and (not item.on_ground or item.vel.length() > 0.2):
+					item.life = 0.2
+					continue
 				_detonate(item)
 				if item.kind == 2:
 					item.node.queue_free()
@@ -102,10 +125,18 @@ func process(delta: float) -> void:
 					item.pos.y = maxf(item.pos.y, 1.8)
 					item.node.position = item.pos
 					item.smoke = true
-					item.life = 12.0
+					item.life = SMOKE_SECONDS
 					continue
 			item.node.queue_free()
 			items.erase(id)
+		elif item.smoke:
+			_update_smoke(item)
+
+func _update_smoke(item: Dictionary) -> void:
+	var age: float = SMOKE_SECONDS - float(item.life)
+	item.node.scale = Vector3.ONE * clampf(age / 1.2, 0.08, 1.0)
+	var density: float = minf(age / 0.8, 1.0) * clampf(float(item.life) / 4.0, 0, 1)
+	for puff in item.node.get_children(): puff.material_override.set_shader_parameter("density", density)
 
 func exposed(origin: Vector3, target: Vector3) -> bool:
 	return game.world.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(origin, target, 1)).is_empty()
@@ -149,7 +180,7 @@ func show_detonation(data: Dictionary) -> void:
 		game.sound.positional("explosion", pos, -2)
 	else:
 		game.fx.puff(pos, Vector3.UP, Color(0.8, 0.84, 0.86), 0.9, 1)
-		game.sound.positional("hit", pos, -3)
+		game.sound.positional("flash_pop" if int(data.kind) == 1 else "smoke_hiss", pos, -6)
 
 func snapshot() -> Array:
 	var result: Array = []
@@ -177,7 +208,10 @@ func apply_snapshot(data: Array) -> void:
 
 func process_visuals(delta: float) -> void:
 	for item in items.values():
-		if not item.smoke:
+		if item.smoke:
+			item.life = maxf(0, float(item.life) - delta)
+			_update_smoke(item)
+		else:
 			item.pos += item.vel * delta
 			item.node.position = item.pos
 

@@ -37,15 +37,17 @@ func run() -> void:
 	var before: Vector3 = bot.position
 	await create_timer(3).timeout
 	check(bot.position.distance_to(before) > 1, "bot navigates using actual player physics")
-	game.player.position = Vector3(0, 0.05, 6)
-	bot.position = Vector3(0, 0.05, -6)
+	game.player.position = game.level.goldsrc(Vector3(200, 1800, 130))
+	bot.position = game.level.goldsrc(Vector3(200, 2200, 130))
 	bot.velocity = Vector3.ZERO
 	check(await wait_until(func(): return game.player.hp < 100), "bot fires real weapons and deals authoritative damage")
 	game.core.pvp_hit(1, bot_id, 999, false)
 	game.lan.sync_stats()
 	check(bot.life == "dead", "bot can be killed with ordinary combat rules")
+	check(not bot.team_marker.visible and not bot.name_label.visible, "death hides floating team disk and name")
 	var generation := int(game.lan.fighters[bot_id].generation)
 	check(await wait_until(func(): return int(game.lan.fighters[bot_id].generation) > generation), "bot uses five-second respawn")
+	check(bot.team_marker.visible and bot.name_label.visible, "respawn restores living team indicators")
 	game.core.coop_register(2, "Late human")
 	game.lan.refresh_pvp()
 	check(game.lan.fighters.size() == 2 and game.lan.fighters.has(2), "joining human keeps balanced population")

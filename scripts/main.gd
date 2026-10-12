@@ -102,6 +102,7 @@ func _setup_inputs() -> void:
 	keys["upgrade_menu"] = KEY_U
 	keys["weapon_6"] = KEY_6
 	keys["grenade"] = KEY_G
+	keys["crouch"] = KEY_CTRL
 	keys["flash_grenade"] = KEY_Q
 	keys["smoke_grenade"] = KEY_C
 	keys["scoreboard"] = KEY_TAB
@@ -595,7 +596,8 @@ func _style_environment() -> void:
 		env.tonemap_exposure = 1.08
 		env.fog_density = 0.0016
 		env.fog_sky_affect = 0.35
-		var sky_mat := ProceduralSkyMaterial.new()
+		var sky_mat := ShaderMaterial.new()
+		sky_mat.shader = preload("res://shaders/assault_sky.gdshader")
 		env.sky.sky_material = sky_mat
 		key_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
 		key_light.directional_shadow_max_distance = 180.0
@@ -610,9 +612,10 @@ func _update_pvp_celestial(delta: float) -> void:
 	if not is_instance_valid(ambience) or not is_instance_valid(key_light): return
 	var env := ambience.environment
 	if env == null: return
-	var sky_mat: ProceduralSkyMaterial = env.sky.sky_material as ProceduralSkyMaterial
-	if sky_mat == null:
-		sky_mat = ProceduralSkyMaterial.new()
+	var sky_mat: Material = env.sky.sky_material
+	if not sky_mat is ShaderMaterial and not sky_mat is ProceduralSkyMaterial:
+		sky_mat = ShaderMaterial.new()
+		sky_mat.shader = preload("res://shaders/assault_sky.gdshader")
 		env.sky.sky_material = sky_mat
 
 	pvp_time_of_day = fposmod(pvp_time_of_day + delta * pvp_time_speed, 24.0)
@@ -632,6 +635,7 @@ func _update_pvp_celestial(delta: float) -> void:
 	var moon_dir := Vector3(-cos(moon_azimuth) * moon_cos, -moon_sin, -sin(moon_azimuth) * moon_cos).normalized()
 
 	var day_factor: float = clampf(sun_sin * 3.5, 0.0, 1.0)
+	if is_instance_valid(level) and level.has_method("update_daylight"): level.update_daylight(day_factor)
 	var night_factor: float = clampf(moon_sin * 3.5, 0.0, 1.0)
 	var sunset_factor: float = clampf(1.0 - absf(H - 18.0) * 0.8, 0.0, 1.0) + clampf(1.0 - absf(H - 6.0) * 0.8, 0.0, 1.0)
 
@@ -660,11 +664,17 @@ func _update_pvp_celestial(delta: float) -> void:
 	var cur_sky_top := night_sky_top.lerp(day_sky_top, day_factor).lerp(sunset_top, sunset_factor * 0.7)
 	var cur_sky_hor := night_sky_hor.lerp(day_sky_hor, day_factor).lerp(sunset_hor, sunset_factor)
 
-	sky_mat.sky_top_color = cur_sky_top
-	sky_mat.sky_horizon_color = cur_sky_hor
-	sky_mat.ground_bottom_color = Color(0.02, 0.03, 0.04).lerp(Color(0.18, 0.22, 0.26), day_factor)
-	sky_mat.ground_horizon_color = cur_sky_hor * 0.65
-	sky_mat.sun_angle_max = 28.0
+	if sky_mat is ShaderMaterial:
+		sky_mat.set_shader_parameter("sun_direction", -sun_dir)
+		sky_mat.set_shader_parameter("moon_direction", -moon_dir)
+		sky_mat.set_shader_parameter("daylight", day_factor)
+		sky_mat.set_shader_parameter("sunset", sunset_factor)
+	else:
+		sky_mat.sky_top_color = cur_sky_top
+		sky_mat.sky_horizon_color = cur_sky_hor
+		sky_mat.ground_bottom_color = Color(0.02, 0.03, 0.04).lerp(Color(0.18, 0.22, 0.26), day_factor)
+		sky_mat.ground_horizon_color = cur_sky_hor * 0.65
+		sky_mat.sun_angle_max = 28.0
 
 	var day_ambient := Color(0.72, 0.80, 0.92)
 	var sunset_ambient := Color(0.90, 0.62, 0.45)

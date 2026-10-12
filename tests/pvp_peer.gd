@@ -55,7 +55,7 @@ func _host() -> void:
 	if not await wait_until(func(): return game.lan.ready_peers.size() == required - 1):
 		check(false, "clients ready")
 		return
-	check(game.level.spatial_type == "pvp_warehouse_three_lane", "warehouse loaded")
+	check(game.level.spatial_type == "cs_assault_16", "original 1.6 warehouse loaded")
 	check(game.get_tree().get_nodes_in_group("zombies").is_empty(), "no survival enemies")
 	var victim := 0
 	for id in game.lan.fighters:
@@ -63,18 +63,20 @@ func _host() -> void:
 	check(victim > 1, "opponent allocated")
 	var p = game.player
 	var target = game.lan.players[victim]
-	p.position = Vector3(30, 11.1, 30)
-	target.position = Vector3(28, 0.2, 8)
+	p.position = game.level.goldsrc(Vector3(0, 2208, 516))
+	target.position = game.level.goldsrc(Vector3(0, 2480, 436))
+	target.set_crouching(true)
 	await pause(1)
 	for team in 2:
 		for slot in 5:
 			var spawn: Vector3 = game.level.spawn_for(team, slot)
 			check(not game.level.grid.is_point_solid(game.level.world_cell(spawn)), "spawn navigable %d/%d" % [team, slot])
-	var path: PackedVector2Array = game.level.grid.get_point_path(game.level.world_cell(game.level.spawn_for(0, 0)), game.level.world_cell(game.level.spawn_for(1, 0)))
+	var path: PackedVector3Array = game.level.route(game.level.spawn_for(0, 0), game.level.spawn_for(1, 0))
 	check(path.size() > 10, "cross-map route connected")
 	await pause(2.2)
-	p.position = Vector3(0, 0.05, 5)
-	target.position = Vector3(0, 0.05, -5)
+	p.position = game.level.goldsrc(Vector3(200, 1800, 130))
+	target.position = game.level.goldsrc(Vector3(200, 2200, 130))
+	target.set_crouching(false)
 	p.rotation.y = 0
 	p.aim_pitch = 0
 	game.core.coop_switch(1, 4)
@@ -92,11 +94,11 @@ func _host() -> void:
 	check(await wait_until(func(): return int(game.lan.fighters[victim].generation) > old_generation, 8), "automatic five-second respawn")
 	game.lan.sync_stats()
 	check(target.hp == 100 and target.life == "alive", "respawn restores health")
-	check(target.position.z < -40, "respawn returns to blue base")
+	check(target.position.y > 3 and target.position.z < -4, "respawn returns to original warehouse spawn")
 	check(not game.core.pvp_hit(1, victim, 999, false).hit, "spawn immunity enforced")
 	await pause(2.2)
-	p.position = Vector3(0, 0.05, 5)
-	target.position = Vector3(0, 0.05, -3)
+	p.position = game.level.goldsrc(Vector3(200, 1800, 130))
+	target.position = game.level.goldsrc(Vector3(200, 2100, 130))
 	p.camera.rotation.x = 0
 	p.trauma = 0
 	game.lan.request("grenade", 1, 0, 0)
@@ -109,13 +111,13 @@ func _host() -> void:
 	game.lan.ordnance._detonate({"kind": 1, "owner": 1, "pos": target.position + Vector3(0, 1.5, -1)})
 	check(float(game.lan.fighters[victim].flash) > 0, "flash exposure applied")
 	await pause(0.5)
-	game.lan.request("grenade", 2, 0, 0)
+	game.lan.request("grenade", 5, 0, 0)
 	check(await wait_until(func():
 		for item in game.lan.ordnance.items.values():
 			if item.smoke: return true
-		return false, 5), "smoke expands after fuse")
+		return false, 10), "smoke expands after settling")
 	await pause(1)
-	var covered: bool = not game.lan.ordnance.exposed(Vector3(0, 1, 40), Vector3(0, 1, 30))
+	var covered: bool = not game.lan.ordnance.exposed(game.level.goldsrc(Vector3(0, 1500, 80)), game.level.goldsrc(Vector3(0, 1700, 80)))
 	check(covered, "spawn cover blocks explosion line of sight")
 	game.lan.hit_player(1, victim, 999, false)
 	check(int(game.lan.pvp_state.scores[0]) == 2, "second authoritative kill")
@@ -170,4 +172,4 @@ func _process(_delta: float) -> void:
 	if game.state == "pvp_finished": client_finished = true
 	for p in game.lan.players.values():
 		if p.network_position.y > 10: client_roof = true
-		if absf(p.network_position.x - 28) < 0.5 and absf(p.network_position.z - 8) < 0.5: client_pipe = true
+		if absf(p.network_position.x) < 0.5 and absf(p.network_position.z + 23.6) < 0.5: client_pipe = true
