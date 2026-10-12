@@ -71,6 +71,8 @@ func _ready() -> void:
 	root.add_child(menu)
 
 func _process(delta: float) -> void:
+	if not is_instance_valid(game) or not is_instance_valid(game.player):
+		return
 	clock += delta
 	hurt = move_toward(hurt, 0, delta * 1.6)
 	hit_timer = maxf(hit_timer - delta, 0)

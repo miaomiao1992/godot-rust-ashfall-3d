@@ -111,13 +111,18 @@ func _setup_environment() -> void:
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
-	env.ambient_light_color = Color(0.43, 0.61, 0.66)
-	env.ambient_light_energy = 0.60
+	env.ambient_light_color = Color(0.48, 0.56, 0.65)
+	env.ambient_light_energy = 0.62
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	env.tonemap_exposure = 1.05
+	env.glow_enabled = true
+	env.glow_bloom = 0.16
+	env.glow_intensity = 0.85
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_SOFTLIGHT
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.12, 0.22, 0.25)
+	env.fog_light_color = Color(0.28, 0.26, 0.24)
 	env.fog_light_energy = 0.7
-	env.fog_density = 0.009
+	env.fog_density = 0.0036
 	env.fog_sky_affect = 0.18
 	ambience.environment = env
 	add_child(ambience)
@@ -509,16 +514,16 @@ func _change_stage(index: int) -> void:
 
 func _style_environment() -> void:
 	var env := ambience.environment
-	var colors := [Color(0.30, 0.29, 0.27), Color(0.19, 0.25, 0.29), Color(0.25, 0.06, 0.04)]
+	var colors := [Color(0.28, 0.26, 0.24), Color(0.19, 0.25, 0.29), Color(0.25, 0.06, 0.04)]
 	env.fog_light_color = colors[stage_index]
-	env.fog_density = [0.0038, 0.0048, 0.011][stage_index]
-	env.ambient_light_color = [Color(0.58, 0.61, 0.67), Color(0.51, 0.61, 0.69), Color(0.7, 0.36, 0.28)][stage_index]
-	env.ambient_light_energy = [0.65, 0.65, 0.55][stage_index]
+	env.fog_density = [0.0035, 0.0048, 0.011][stage_index]
+	env.ambient_light_color = [Color(0.52, 0.58, 0.66), Color(0.51, 0.61, 0.69), Color(0.7, 0.36, 0.28)][stage_index]
+	env.ambient_light_energy = [0.62, 0.65, 0.55][stage_index]
 	if stage_index < 2:
 		var panorama := PanoramaSkyMaterial.new()
 		panorama.panorama = load("res://assets/skies/highway_dusk.png" if stage_index == 0 else "res://assets/skies/harbor_overcast.png")
 		env.sky.sky_material = panorama
-		env.background_energy_multiplier = 0.9
+		env.background_energy_multiplier = 0.95 if stage_index == 0 else 0.9
 	else:
 		var interior := ProceduralSkyMaterial.new()
 		interior.sky_top_color = colors[stage_index] * 0.3
@@ -526,8 +531,8 @@ func _style_environment() -> void:
 		env.sky.sky_material = interior
 		env.background_energy_multiplier = 0.6
 	key_light.rotation_degrees = [Vector3(-21, -54, 0), Vector3(-37, -28, 0), Vector3(-48, -30, 0)][stage_index]
-	key_light.light_color = [Color(1.0, 0.79, 0.58), Color(0.70, 0.81, 0.89), Color(0.58, 0.76, 0.85)][stage_index]
-	key_light.light_energy = [0.95, 0.78, 0.85][stage_index]
+	key_light.light_color = [Color(1.0, 0.77, 0.54), Color(0.70, 0.81, 0.89), Color(0.58, 0.76, 0.85)][stage_index]
+	key_light.light_energy = [1.08, 0.78, 0.85][stage_index]
 
 func _spawn_add(pos: Vector3, kind: int):
 	if alive >= 100:

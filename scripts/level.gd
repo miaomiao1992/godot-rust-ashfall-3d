@@ -97,47 +97,24 @@ func _highway() -> void:
 	_deck(Rect2i(5, 12, 11, 4), 4, asphalt)
 	_ramp(Rect2i(5, 8, 5, 4), 4, 8, asphalt)
 	_deck(Rect2i(5, 2, 16, 6), 8, asphalt)
-	for p in [Vector3(-8, 0, 28), Vector3(-8, 0, 12), Vector3(-28, 0, -2), Vector3(-28, 0, -36), Vector3(8, 0, -40)]:
-		var top := ground_point(p)
-		# Stop below the 0.6 m bridge slab. Flush concrete/asphalt top faces
-		# produced flickering rectangular patches and diagonal depth-fight lines.
-		var support_top := top.y - 0.62
-		Forge.box(self, Vector3(p.x, support_top * 0.5 - 4, p.z), Vector3(2.7, support_top + 8, 3.2), concrete)
-	for z in range(6, 50, 7):
-		Forge.box(self, Vector3(-5, 4.017, z), Vector3(0.16, 0.018, 3.0), Forge.material(Color(0.7, 0.61, 0.3)))
-	for x in range(-34, 26, 7):
-		Forge.box(self, Vector3(x, 8.017, -40), Vector3(3, 0.018, 0.16), Forge.material(Color(0.7, 0.61, 0.3)))
-	# A second highway crosses overhead and has visibly broken-away ends.
-	for x in [-40.0, 30.0]:
-		Forge.box(self, Vector3(x, 13.1, 15), Vector3(30, 1.4, 14), concrete)
-		Forge.box(self, Vector3(x, 13.85, 15), Vector3(30, 0.1, 13), asphalt)
-		for support in [-8.0, 8.0]:
-			Forge.box(self, Vector3(x + support, 2, 15), Vector3(2.4, 21, 3), concrete)
-	for i in 7:
-		var steel := Forge.cylinder(self, Vector3(-23 + i * 0.45, 13.2, 15), 0.035, 4.5, Forge.material(Color(0.18, 0.17, 0.14), 0.6))
-		steel.rotation.z = PI / 2
-	for i in 4:
-		var slab := Forge.box(self, Vector3(17 + i * 4, -5 + i * 0.9, 18), Vector3(5, 1.4, 8), concrete)
-		slab.rotation_degrees = Vector3(17 + i * 4, 13 * i, 20)
+
+	_highway_substructure(concrete)
+	_highway_ruins(concrete)
+	_highway_guardrails()
+	_highway_markings()
+	_highway_gantry()
+	_highway_ramp_sign()
+
 	_car(Vector2i(11, 18), false)
 	_car(Vector2i(15, 24), true)
 	_car(Vector2i(7, 4), true)
 	_car(Vector2i(14, 3), false)
-	_guardrails(Color(0.41, 0.43, 0.4))
-	for p in [Vector3(2, 4, 32), Vector3(-14, 4, 14), Vector3(-35, 4, -2), Vector3(-35, 8, -35), Vector3(20, 8, -35)]:
-		_lamp(p, Color(1, 0.48, 0.2), 6.5)
-	var sign := Forge.label(self, Vector3(-8, 9.6, 28), "EXIT 07  ←  BRIDGE COLLAPSED", Color(0.65, 0.88, 0.77), 56)
-	sign.pixel_size = 0.011
-	Forge.box(self, Vector3(-8, 10, 28.1), Vector3(15, 2, 0.25), Forge.material(Color(0.055, 0.19, 0.15)))
-	Forge.label(self, Vector3(-28, 9.7, -1), "前方坡道 / UPHILL", Color(1, 0.64, 0.24), 36)
-	# The city is below the suspended route, rather than a playable flat street grid.
-	for i in 24:
-		var a := i * TAU / 24
-		var p := Vector3(sin(a), 0, cos(a)) * 69
-		var h := 12 + (i % 5) * 4
-		Forge.box(self, p + Vector3(0, h * 0.5 - 12, 0), Vector3(10, h, 12), Forge.material(Color(0.1, 0.16, 0.19)))
-		_city_facade(p, h, i)
-	_highway_detail(concrete)
+
+	_highway_props()
+	_highway_lamps()
+	_highway_backdrop(concrete)
+	_weather(true)
+
 	spawn_points = [ground_point(Vector3(0, 0, 26)), ground_point(Vector3(-30, 0, 0)), ground_point(Vector3(-30, 0, -44)), ground_point(Vector3(20, 0, -42))]
 
 func _docks() -> void:
@@ -330,27 +307,478 @@ func _container(rect: Rect2i) -> void:
 	Forge.label(self, center + Vector3(0, 1.8, rect.size.y * 2), "CARGO / %02d" % rect.position.y, Color(0.73, 0.83, 0.8), 40).pixel_size = 0.007
 
 func _car(cell: Vector2i, burned: bool) -> void:
+	if cell == Vector2i(15, 24):
+		_build_police_car(cell)
+	elif cell == Vector2i(11, 18):
+		_build_civilian_car(cell)
+	elif cell == Vector2i(7, 4):
+		_build_burned_car(cell)
+	elif cell == Vector2i(14, 3):
+		_build_pickup_truck(cell)
+	else:
+		_build_civilian_car(cell)
+
+func _build_police_car(cell: Vector2i) -> void:
 	var root := Node3D.new()
 	add_child(root)
 	root.position = cell_world(cell)
-	var metal := Forge.material(Color(0.12, 0.13, 0.13) if burned else Color(0.25, 0.35, 0.37), 0.55)
-	Forge.box(root, Vector3(0, 0.65, 0), Vector3(1.75, 0.75, 3.2), metal, true)
-	Forge.box(root, Vector3(0, 1.15, 0.2), Vector3(1.5, 0.65, 1.6), Forge.material(Color(0.05, 0.09, 0.1), 0.6), true)
-	for x in [-0.89, 0.89]:
-		for z in [-1, 1]:
-			Forge.cylinder(root, Vector3(x, 0.4, z), 0.35, 0.18, Forge.material(Color(0.045, 0.05, 0.05))).rotation.z = PI / 2
-			var rim := Forge.cylinder(root, Vector3(x * 1.10, 0.4, z), 0.17, 0.035, Forge.material(Color(0.20, 0.21, 0.20), 0.55, 0, 0.7))
-			rim.rotation.z = PI / 2
-	var trim := Forge.material(Color(0.06, 0.065, 0.065), 0.2)
-	for z in [-1.62, 1.62]:
-		Forge.box(root, Vector3(0, 0.55, z), Vector3(1.68, 0.16, 0.075), trim)
-		for x in [-0.58, 0.58]:
-			Forge.box(root, Vector3(x, 0.80, z), Vector3(0.28, 0.11, 0.055), Forge.material(Color(0.30, 0.27, 0.17) if burned else Color(0.61, 0.57, 0.40), 0, 0.18))
+	var paint_black := Forge.material(Color(0.06, 0.065, 0.07), 0.45, 0, 0.45)
+	var paint_white := Forge.material(Color(0.85, 0.86, 0.87), 0.20, 0, 0.45)
+	var dark_steel := Forge.material(Color(0.14, 0.16, 0.18), 0.75, 0, 0.50)
+	var glass := Forge.material(Color(0.07, 0.11, 0.14), 0.20, 0, 0.25)
+	var tire_mat := Forge.material(Color(0.04, 0.045, 0.05), 0.0, 0, 0.90)
+	var rim_mat := Forge.material(Color(0.40, 0.42, 0.44), 0.65, 0, 0.40)
+	var red_glow := Forge.material(Color(1.0, 0.15, 0.08), 0.0, 3.0, 0.2)
+	var blue_glow := Forge.material(Color(0.12, 0.45, 1.0), 0.0, 3.0, 0.2)
+	var head_glow := Forge.material(Color(1.0, 0.95, 0.85), 0.0, 2.0, 0.2)
+	var amber_mat := Forge.material(Color(1.0, 0.65, 0.12), 0.0, 0.5, 0.4)
+
+	Forge.box(root, Vector3(0, 0.62, 0), Vector3(1.85, 0.62, 4.2), paint_black, true)
+	Forge.box(root, Vector3(0, 1.40, -0.15), Vector3(1.50, 0.06, 1.7), paint_white)
 	for side in [-1, 1]:
-		Forge.box(root, Vector3(side * 0.76, 1.18, 0.2), Vector3(0.025, 0.37, 1.2), Forge.material(Color(0.10, 0.17, 0.19), 0.15, 0, 0.35))
-		Forge.box(root, Vector3(side * 0.79, 1.15, 0.25), Vector3(0.04, 0.65, 0.055), metal)
-		Forge.box(root, Vector3(side * 0.9, 0.77, 0.12), Vector3(0.045, 0.04, 0.22), trim)
+		Forge.box(root, Vector3(side * 0.93, 0.70, -0.1), Vector3(0.04, 0.48, 1.5), paint_white)
+	Forge.box(root, Vector3(0, 1.15, -0.15), Vector3(1.52, 0.62, 1.6), glass, true)
+	Forge.box(root, Vector3(0, 0.65, 2.22), Vector3(1.70, 0.55, 0.12), dark_steel, true)
+	for px in [-0.60, 0.60]:
+		Forge.cylinder(root, Vector3(px, 0.65, 2.22), 0.04, 0.55, dark_steel)
+	Forge.box(root, Vector3(0, 1.50, -0.15), Vector3(1.25, 0.05, 0.22), dark_steel)
+	Forge.box(root, Vector3(-0.35, 1.56, -0.15), Vector3(0.55, 0.10, 0.20), red_glow)
+	Forge.box(root, Vector3(0.35, 1.56, -0.15), Vector3(0.55, 0.10, 0.20), blue_glow)
+	Forge.box(root, Vector3(0, 1.56, -0.15), Vector3(0.14, 0.09, 0.18), dark_steel)
+	for x in [-0.94, 0.94]:
+		for z in [-1.25, 1.25]:
+			var tire := Forge.cylinder(root, Vector3(x, 0.38, z), 0.36, 0.22, tire_mat)
+			tire.rotation.z = PI / 2
+			var rim := Forge.cylinder(root, Vector3(x * 1.08, 0.38, z), 0.20, 0.04, rim_mat)
+			rim.rotation.z = PI / 2
+	for hx in [-0.62, 0.62]:
+		Forge.box(root, Vector3(hx, 0.72, 2.12), Vector3(0.28, 0.12, 0.06), head_glow)
+		Forge.box(root, Vector3(hx * 1.25, 0.72, 2.11), Vector3(0.12, 0.10, 0.05), amber_mat)
+		Forge.box(root, Vector3(hx, 0.72, -2.12), Vector3(0.30, 0.12, 0.06), red_glow)
+	for side in [-1, 1]:
+		Forge.box(root, Vector3(side * 0.98, 1.15, 0.60), Vector3(0.16, 0.12, 0.14), paint_black)
+	for side in [-1, 1]:
+		var lbl := Forge.label(root, Vector3(side * 0.96, 0.75, -0.1), "POLICE", Color(0.15, 0.15, 0.15), 32)
+		lbl.pixel_size = 0.006
+		lbl.rotation.y = side * PI / 2
 	_block(Rect2i(cell, Vector2i.ONE))
+
+func _build_civilian_car(cell: Vector2i) -> void:
+	var root := Node3D.new()
+	add_child(root)
+	root.position = cell_world(cell)
+	var blue_paint := Forge.material(Color(0.16, 0.24, 0.30), 0.60, 0, 0.40)
+	var dark_trim := Forge.material(Color(0.08, 0.09, 0.10), 0.30, 0, 0.60)
+	var glass := Forge.material(Color(0.08, 0.12, 0.15), 0.20, 0, 0.25)
+	var tire_mat := Forge.material(Color(0.04, 0.045, 0.05), 0.0, 0, 0.90)
+	var rim_mat := Forge.material(Color(0.55, 0.58, 0.60), 0.75, 0, 0.35)
+	var head_glow := Forge.material(Color(1.0, 0.95, 0.85), 0.0, 2.0, 0.2)
+	var red_lens := Forge.material(Color(0.85, 0.12, 0.08), 0.0, 0.8, 0.3)
+	var leather := Forge.material(Color(0.32, 0.20, 0.12), 0.0, 0, 0.85)
+
+	Forge.box(root, Vector3(0, 0.58, 0), Vector3(1.80, 0.60, 4.0), blue_paint, true)
+	Forge.box(root, Vector3(0, 1.12, -0.10), Vector3(1.48, 0.60, 1.8), glass, true)
+	Forge.box(root, Vector3(0, 1.40, -0.10), Vector3(1.44, 0.06, 1.7), blue_paint)
+	for x in [-0.92, 0.92]:
+		for z in [-1.2, 1.2]:
+			var tire := Forge.cylinder(root, Vector3(x, 0.36, z), 0.35, 0.20, tire_mat)
+			tire.rotation.z = PI / 2
+			var rim := Forge.cylinder(root, Vector3(x * 1.06, 0.36, z), 0.19, 0.04, rim_mat)
+			rim.rotation.z = PI / 2
+	for hx in [-0.58, 0.58]:
+		Forge.box(root, Vector3(hx, 0.68, 2.02), Vector3(0.26, 0.11, 0.05), head_glow)
+		Forge.box(root, Vector3(hx, 0.68, -2.02), Vector3(0.28, 0.11, 0.05), red_lens)
+	Forge.box(root, Vector3(0, 0.62, 2.02), Vector3(0.70, 0.18, 0.04), dark_trim)
+	var open_door := Forge.box(root, Vector3(1.02, 0.80, 0.15), Vector3(0.05, 0.52, 0.95), blue_paint)
+	open_door.rotation.y = 0.35
+	Forge.box(root, Vector3(1.65, 0.15, 0.30), Vector3(0.65, 0.28, 0.45), leather)
+	Forge.box(root, Vector3(1.75, 0.10, -0.45), Vector3(0.55, 0.20, 0.38), dark_trim)
+	_block(Rect2i(cell, Vector2i.ONE))
+
+func _build_burned_car(cell: Vector2i) -> void:
+	var root := Node3D.new()
+	add_child(root)
+	root.position = cell_world(cell)
+	var charred_metal := Forge.material(Color(0.08, 0.085, 0.09), 0.25, 0, 0.90)
+	var rust_metal := Forge.material(Color(0.22, 0.14, 0.09), 0.35, 0, 0.85)
+	var soot_mat := Forge.material(Color(0.03, 0.03, 0.035), 0.0, 0, 0.98)
+	var tire_mat := Forge.material(Color(0.04, 0.045, 0.05), 0.0, 0, 0.90)
+
+	Forge.box(root, Vector3(0, 0.012, 0), Vector3(3.8, 0.015, 5.2), soot_mat)
+	Forge.box(root, Vector3(0, 0.62, 0), Vector3(1.85, 0.65, 4.1), charred_metal, true)
+	Forge.box(root, Vector3(0, 1.15, 0.10), Vector3(1.50, 0.60, 1.7), charred_metal, true)
+	var hood := Forge.box(root, Vector3(0, 1.05, 1.45), Vector3(1.40, 0.05, 1.1), rust_metal)
+	hood.rotation.x = -0.35
+	Forge.box(root, Vector3(0, 0.70, 1.40), Vector3(0.70, 0.35, 0.65), rust_metal)
+	for x in [-0.92, 0.92]:
+		for z in [-1.2, 1.2]:
+			if x > 0 and z > 0:
+				var rotor := Forge.cylinder(root, Vector3(x * 0.95, 0.28, z), 0.20, 0.06, rust_metal)
+				rotor.rotation.z = PI / 2
+			else:
+				var tire := Forge.cylinder(root, Vector3(x, 0.36, z), 0.35, 0.20, tire_mat)
+				tire.rotation.z = PI / 2
+	_block(Rect2i(cell, Vector2i.ONE))
+
+func _build_pickup_truck(cell: Vector2i) -> void:
+	var root := Node3D.new()
+	add_child(root)
+	root.position = cell_world(cell)
+	var olive_paint := Forge.material(Color(0.24, 0.29, 0.22), 0.30, 0, 0.65)
+	var dark_steel := Forge.material(Color(0.14, 0.16, 0.18), 0.70, 0, 0.55)
+	var wood_crate := Forge.material(Color(0.42, 0.32, 0.20), 0.0, 0, 0.85)
+	var fuel_can := Forge.material(Color(0.75, 0.18, 0.12), 0.20, 0, 0.60)
+	var tire_mat := Forge.material(Color(0.04, 0.045, 0.05), 0.0, 0, 0.90)
+	var glass := Forge.material(Color(0.08, 0.12, 0.15), 0.20, 0, 0.25)
+
+	Forge.box(root, Vector3(0, 0.75, 0.5), Vector3(1.90, 0.70, 2.2), olive_paint, true)
+	Forge.box(root, Vector3(0, 1.35, 0.3), Vector3(1.60, 0.65, 1.6), glass, true)
+	Forge.box(root, Vector3(0, 1.68, 0.3), Vector3(1.55, 0.06, 1.5), olive_paint)
+	Forge.box(root, Vector3(0, 0.50, -1.2), Vector3(1.85, 0.35, 2.0), olive_paint, true)
+	for side in [-1, 1]:
+		Forge.box(root, Vector3(side * 0.90, 0.85, -1.2), Vector3(0.08, 0.45, 2.0), olive_paint)
+	Forge.box(root, Vector3(0, 0.85, -2.18), Vector3(1.75, 0.45, 0.08), olive_paint)
+	Forge.box(root, Vector3(-0.35, 0.82, -1.1), Vector3(0.75, 0.55, 0.75), wood_crate)
+	Forge.box(root, Vector3(0.45, 0.78, -0.9), Vector3(0.60, 0.50, 0.60), wood_crate)
+	Forge.box(root, Vector3(0.42, 0.72, -1.6), Vector3(0.24, 0.38, 0.32), fuel_can)
+	Forge.box(root, Vector3(0.12, 0.72, -1.6), Vector3(0.24, 0.38, 0.32), fuel_can)
+	for x in [-0.96, 0.96]:
+		for z in [-1.15, 1.15]:
+			var tire := Forge.cylinder(root, Vector3(x, 0.45, z), 0.44, 0.26, tire_mat)
+			tire.rotation.z = PI / 2
+			var rim := Forge.cylinder(root, Vector3(x * 1.08, 0.45, z), 0.22, 0.05, dark_steel)
+			rim.rotation.z = PI / 2
+	Forge.box(root, Vector3(0, 0.65, 1.65), Vector3(1.95, 0.45, 0.22), dark_steel, true)
+	_block(Rect2i(cell, Vector2i.ONE))
+
+func _highway_substructure(concrete: Material) -> void:
+	var girder_concrete := Forge.material(Color(0.28, 0.29, 0.29), 0.05, 0, 0.85)
+	var dark_steel := Forge.material(Color(0.18, 0.20, 0.22), 0.70, 0, 0.55)
+	var pvc_pipe := Forge.material(Color(0.12, 0.13, 0.14), 0.20, 0, 0.60)
+	var bearing_mat := Forge.material(Color(0.08, 0.08, 0.09), 0.10, 0, 0.90)
+
+	for gx in [-7.5, 0.5]:
+		Forge.box(self, Vector3(gx, 2.5, 34.0), Vector3(1.1, 1.6, 40.0), girder_concrete)
+	for dz in [18.0, 28.0, 38.0, 48.0]:
+		Forge.box(self, Vector3(-3.5, 2.6, dz), Vector3(3.0, 1.4, 0.4), girder_concrete)
+	for gz in [-2.0, 3.0]:
+		Forge.box(self, Vector3(-26.0, 2.5, gz), Vector3(24.0, 1.6, 1.1), girder_concrete)
+	for gx in [-28.0, -10.0]:
+		Forge.box(self, Vector3(gx, 6.4, -38.0), Vector3(1.2, 1.8, 24.0), girder_concrete)
+	for dz in [-44.0, -32.0]:
+		Forge.box(self, Vector3(-19.0, 6.5, dz), Vector3(16.8, 1.6, 0.4), girder_concrete)
+
+	for p in [Vector3(-8, 0, 28), Vector3(-8, 0, 12), Vector3(-28, 0, -2), Vector3(-28, 0, -36), Vector3(8, 0, -40)]:
+		var top := ground_point(p)
+		var support_top := top.y - 0.62
+		Forge.box(self, Vector3(p.x, support_top * 0.5 - 4, p.z), Vector3(2.7, support_top + 8, 3.2), concrete)
+		var cap_y := support_top - 0.55
+		Forge.box(self, Vector3(p.x, cap_y, p.z), Vector3(4.8, 0.7, 3.2), concrete)
+		for bx in [-1.5, 1.5]:
+			Forge.box(self, Vector3(p.x + bx, support_top - 0.12, p.z), Vector3(0.6, 0.15, 0.6), bearing_mat)
+		Forge.cylinder(self, Vector3(p.x + 1.42, (support_top - 4) * 0.5, p.z + 1.65), 0.07, support_top + 4, pvc_pipe)
+		for pipe_y in range(0, int(support_top), 4):
+			Forge.box(self, Vector3(p.x + 1.38, pipe_y, p.z + 1.62), Vector3(0.18, 0.06, 0.18), dark_steel)
+
+func _highway_ruins(concrete: Material) -> void:
+	var asphalt := ShaderMaterial.new()
+	asphalt.shader = preload("res://shaders/asphalt.gdshader")
+	var rusty_rebar := Forge.material(Color(0.28, 0.17, 0.11), 0.45, 0, 0.85)
+	var galv := Forge.material(Color(0.52, 0.56, 0.58), 0.72, 0, 0.40)
+
+	for x in [-40.0, 30.0]:
+		Forge.box(self, Vector3(x, 13.1, 15), Vector3(30, 1.4, 14), concrete)
+		Forge.box(self, Vector3(x, 13.85, 15), Vector3(30, 0.1, 13), asphalt)
+		for support in [-8.0, 8.0]:
+			Forge.box(self, Vector3(x + support, 2, 15), Vector3(2.4, 21, 3), concrete)
+
+	for i in 9:
+		var rebar := Forge.cylinder(self, Vector3(-24.5 + float(i % 3) * 0.4, 13.1 - float(i) * 0.18, 10.0 + i * 1.1), 0.035, 3.8 + (i % 3) * 1.2, rusty_rebar)
+		rebar.rotation.z = PI / 2 - 0.25 * float(i % 3)
+		rebar.rotation.y = (i % 2) * 0.2
+
+	for side_z in [8.2, 21.8]:
+		var bent_rail := Forge.box(self, Vector3(-24.0, 13.4, side_z), Vector3(3.2, 0.35, 0.1), galv)
+		bent_rail.rotation.z = -0.45
+
+	for i in 8:
+		var rebar := Forge.cylinder(self, Vector3(14.5 - float(i % 3) * 0.4, 13.1 - float(i) * 0.18, 10.5 + i * 1.1), 0.035, 3.5 + (i % 3) * 1.1, rusty_rebar)
+		rebar.rotation.z = -PI / 2 + 0.25 * float(i % 3)
+	for side_z in [8.2, 21.8]:
+		var bent_rail := Forge.box(self, Vector3(14.0, 13.4, side_z), Vector3(3.2, 0.35, 0.1), galv)
+		bent_rail.rotation.z = 0.45
+
+	var hung_lamp := Forge.cylinder(self, Vector3(-24.8, 14.5, 8.5), 0.07, 6.0, galv)
+	hung_lamp.rotation.z = -0.75
+	hung_lamp.rotation.y = 0.3
+
+	for i in 5:
+		var slab := Forge.box(self, Vector3(17 + i * 4, -5 + i * 0.9, 18), Vector3(5, 1.4, 8), concrete)
+		slab.rotation_degrees = Vector3(17 + i * 4, 13 * i, 20)
+	for i in 6:
+		var rx := -10.0 + i * 5.0
+		var rubble := Forge.box(self, Vector3(rx, -11.2, 15.0 + (i % 3) * 2.0), Vector3(3.5, 2.2, 4.0), concrete)
+		rubble.rotation_degrees = Vector3(15 * (i % 3), 35 * i, -12 * (i % 2))
+
+func _highway_guardrails() -> void:
+	var concrete := Forge.material(Color(0.33, 0.34, 0.32))
+	var galv := Forge.material(Color(0.52, 0.56, 0.58), 0.72, 0, 0.40)
+	var post_steel := Forge.material(Color(0.24, 0.27, 0.29), 0.65, 0, 0.55)
+	var refl_amber := Forge.material(Color(1.0, 0.72, 0.12), 0, 1.8, 0.2)
+	var refl_red := Forge.material(Color(1.0, 0.18, 0.10), 0, 1.8, 0.2)
+	for cell in floor_heights:
+		for dir in [Vector2i.LEFT, Vector2i.RIGHT, Vector2i.UP, Vector2i.DOWN]:
+			if floor_heights.has(cell + dir):
+				continue
+			var pos := cell_world(cell) + Vector3(dir.x * 2.0, 0, dir.y * 2.0)
+			pos.y = surface_height(pos - Vector3(dir.x, 0, dir.y) * 0.05)
+			var size := Vector3(0.13, 0.9, 4) if dir.x != 0 else Vector3(4, 0.9, 0.13)
+			var body := StaticBody3D.new()
+			body.position = pos + Vector3.UP * 0.48
+			body.collision_layer = 1
+			body.collision_mask = 0
+			var col := CollisionShape3D.new()
+			var shape := BoxShape3D.new()
+			shape.size = size
+			col.shape = shape
+			body.add_child(col)
+			add_child(body)
+
+			var curb_size := Vector3(0.24, 0.32, 4.0) if dir.x != 0 else Vector3(4.0, 0.32, 0.24)
+			Forge.box(self, pos + Vector3.UP * 0.16, curb_size, concrete)
+			var rail_size := Vector3(0.08, 0.34, 4.0) if dir.x != 0 else Vector3(4.0, 0.34, 0.08)
+			Forge.box(self, pos + Vector3.UP * 0.68, rail_size, galv)
+			for offset in [-1.0, 1.0]:
+				var post_pos := pos + (Vector3(0, 0, offset) if dir.x != 0 else Vector3(offset, 0, 0))
+				Forge.box(self, post_pos + Vector3.UP * 0.46, Vector3(0.10, 0.88, 0.10), post_steel)
+				var refl_offset := -Vector3(dir.x, 0, dir.y) * 0.09
+				var refl_mat := refl_amber if (cell.x + cell.y) % 2 == 0 else refl_red
+				Forge.box(self, post_pos + Vector3.UP * 0.72 + refl_offset, Vector3(0.04, 0.10, 0.06) if dir.x != 0 else Vector3(0.06, 0.10, 0.04), refl_mat)
+
+func _highway_markings() -> void:
+	var white_line := Forge.material(Color(0.88, 0.90, 0.88), 0.0, 0, 0.65)
+	var yellow_line := Forge.material(Color(0.88, 0.70, 0.18), 0.0, 0, 0.55)
+	var skid_mat := Forge.material(Color(0.04, 0.04, 0.045), 0.0, 0, 0.95)
+
+	Forge.box(self, Vector3(-13.5, 4.018, 33.5), Vector3(0.18, 0.016, 39.0), white_line)
+	Forge.box(self, Vector3(13.5, 4.018, 41.5), Vector3(0.18, 0.016, 23.0), white_line)
+	Forge.box(self, Vector3(5.5, 4.018, 22.0), Vector3(0.18, 0.016, 16.0), white_line)
+	Forge.box(self, Vector3(9.5, 4.018, 30.0), Vector3(8.0, 0.016, 0.18), white_line)
+
+	for z in range(6, 50, 7):
+		Forge.box(self, Vector3(-5, 4.017, z), Vector3(0.16, 0.018, 3.0), Forge.material(Color(0.7, 0.61, 0.3)))
+		Forge.box(self, Vector3(-0.5, 4.017, z), Vector3(0.16, 0.018, 3.0), white_line)
+		Forge.box(self, Vector3(-9.5, 4.017, z), Vector3(0.16, 0.018, 3.0), white_line)
+
+	for x in range(-34, 26, 7):
+		Forge.box(self, Vector3(x, 8.017, -40), Vector3(3, 0.018, 0.16), Forge.material(Color(0.7, 0.61, 0.3)))
+		Forge.box(self, Vector3(x, 8.017, -35), Vector3(3, 0.018, 0.16), white_line)
+	Forge.box(self, Vector3(-16.0, 8.018, -49.5), Vector3(44.0, 0.016, 0.18), white_line)
+	Forge.box(self, Vector3(-16.0, 8.018, -26.5), Vector3(44.0, 0.016, 0.18), white_line)
+
+	for y_offset in [-0.12, 0.12]:
+		Forge.box(self, Vector3(-26.0, 4.018, -2.0 + y_offset), Vector3(23.0, 0.016, 0.15), yellow_line)
+
+	for offset_x in [-0.85, 0.85]:
+		for i in 6:
+			var t: float = float(i) / 5.0
+			var sz: float = 22.0 + t * 7.0
+			var sx: float = -4.0 + float(offset_x) + sin(t * 1.5) * 1.2
+			var skid := Forge.box(self, Vector3(sx, 4.020, sz), Vector3(0.24, 0.012, 1.4), skid_mat)
+			skid.rotation.y = -0.15 * t
+
+func _highway_gantry() -> void:
+	var steel := Forge.material(Color(0.25, 0.28, 0.30), 0.70, 0, 0.45)
+	var dark_metal := Forge.material(Color(0.12, 0.14, 0.16), 0.80, 0, 0.55)
+	var sign_green := Forge.material(Color(0.045, 0.20, 0.14), 0.15, 0, 0.65)
+	var border_white := Forge.material(Color(0.88, 0.90, 0.88), 0.10, 0, 0.50)
+	var vms_screen := Forge.material(Color(0.02, 0.025, 0.03), 0.0, 0, 0.95)
+	var amber_glow := Forge.material(Color(1.0, 0.60, 0.12), 0.0, 3.2, 0.20)
+	var flood_glow := Forge.material(Color(1.0, 0.90, 0.75), 0.0, 2.5, 0.20)
+
+	for tower_x in [-14.2, 1.8]:
+		Forge.box(self, Vector3(float(tower_x), 4.2, 28.0), Vector3(0.8, 0.4, 0.8), dark_metal)
+		for dx in [-0.26, 0.26]:
+			for dz in [-0.26, 0.26]:
+				Forge.cylinder(self, Vector3(float(tower_x) + float(dx), 7.8, 28.0 + float(dz)), 0.045, 7.2, steel)
+		for y in [5.4, 7.0, 8.6, 10.2]:
+			Forge.box(self, Vector3(float(tower_x), float(y), 28.0), Vector3(0.60, 0.06, 0.60), steel)
+
+	var truss_span := 16.0
+	var truss_center_x := -6.2
+	for ty in [10.4, 11.6]:
+		for tz in [27.7, 28.3]:
+			var chord := Forge.cylinder(self, Vector3(truss_center_x, ty, tz), 0.045, truss_span, steel)
+			chord.rotation.z = PI / 2
+	for i in 12:
+		var x_step := -13.6 + i * 1.25
+		Forge.box(self, Vector3(x_step, 11.0, 28.0), Vector3(0.05, 1.2, 0.6), steel)
+
+	Forge.box(self, Vector3(truss_center_x, 9.9, 28.0), Vector3(truss_span - 0.8, 0.08, 0.9), dark_metal)
+	Forge.box(self, Vector3(truss_center_x, 10.7, 27.5), Vector3(truss_span - 0.8, 0.05, 0.05), steel)
+
+	Forge.box(self, Vector3(-9.2, 10.65, 28.30), Vector3(7.4, 2.3, 0.10), sign_green)
+	Forge.box(self, Vector3(-9.2, 10.65, 28.27), Vector3(7.5, 2.4, 0.05), border_white)
+	var sign_lbl := Forge.label(self, Vector3(-9.2, 10.65, 28.38), "出口 07     EXIT 07     >>\n新城高架 · 前方断桥坍塌\nBRIDGE COLLAPSED - 500m", Color(0.88, 0.98, 0.92), 44)
+	sign_lbl.pixel_size = 0.010
+	for fx in [-11.5, -6.9]:
+		Forge.box(self, Vector3(fx, 11.95, 28.55), Vector3(0.35, 0.12, 0.35), dark_metal)
+		Forge.box(self, Vector3(fx, 11.90, 28.55), Vector3(0.28, 0.04, 0.28), flood_glow)
+		_beam(Vector3(fx, 11.6, 28.3), Vector3(fx, 11.95, 28.55), 0.04, steel)
+
+	Forge.box(self, Vector3(-2.2, 10.65, 28.30), Vector3(5.6, 2.1, 0.16), dark_metal)
+	Forge.box(self, Vector3(-2.2, 10.65, 28.36), Vector3(5.3, 1.8, 0.04), vms_screen)
+	var vms_lbl := Forge.label(self, Vector3(-2.2, 10.65, 28.40), "[!] 警报: 余烬禁区 · 全线封锁 [!]\nBIOHAZARD - EVAC TERMINATED\n! 严禁通行  NO PASSAGE !", Color(1.0, 0.65, 0.12), 34)
+	vms_lbl.pixel_size = 0.009
+	for bx in [-4.8, 0.4]:
+		Forge.cylinder(self, Vector3(bx, 11.85, 28.34), 0.10, 0.24, amber_glow)
+
+	var gantry_light := OmniLight3D.new()
+	gantry_light.position = Vector3(-5.5, 9.8, 28.2)
+	gantry_light.light_color = Color(1.0, 0.75, 0.45)
+	gantry_light.light_energy = 1.8
+	gantry_light.omni_range = 14.0
+	gantry_light.shadow_enabled = false
+	add_child(gantry_light)
+
+func _highway_ramp_sign() -> void:
+	var dark_steel := Forge.material(Color(0.18, 0.20, 0.22), 0.70, 0, 0.55)
+	var sign_yellow := Forge.material(Color(0.85, 0.65, 0.10), 0.10, 0, 0.60)
+	var border_black := Forge.material(Color(0.08, 0.08, 0.09), 0.0, 0, 0.80)
+	Forge.cylinder(self, Vector3(-17.5, 7.0, -1.0), 0.14, 6.0, dark_steel)
+	_beam(Vector3(-17.5, 9.8, -1.0), Vector3(-28.0, 9.8, -1.0), 0.12, dark_steel)
+	Forge.box(self, Vector3(-26.0, 9.7, -1.0), Vector3(7.2, 1.6, 0.10), sign_yellow)
+	Forge.box(self, Vector3(-26.0, 9.7, -0.98), Vector3(7.4, 1.7, 0.04), border_black)
+	var label := Forge.label(self, Vector3(-26.0, 9.7, -0.92), "前方连续坡道 · 减速慢行\n>> STEEP UPHILL GRADE - REDUCE SPEED >>", Color(0.1, 0.1, 0.1), 38)
+	label.pixel_size = 0.010
+
+func _highway_props() -> void:
+	var dark_steel := Forge.material(Color(0.18, 0.20, 0.22), 0.70, 0, 0.55)
+	var rust_drum := Forge.material(Color(0.42, 0.22, 0.12), 0.35, 0, 0.80)
+	var yellow_drum := Forge.material(Color(0.85, 0.65, 0.10), 0.20, 0, 0.55)
+
+	for cp in [Vector3(1.0, 4.0, 35.0), Vector3(0.0, 4.0, 36.5), Vector3(-1.2, 4.0, 38.0), Vector3(-11.5, 4.0, 15.5), Vector3(4.0, 8.0, -38.0)]:
+		_traffic_cone(cp)
+
+	_jersey_barrier(Vector3(3.5, 4.0, 31.0), 0.25)
+	_jersey_barrier(Vector3(-10.5, 4.0, 16.0), -0.40)
+	_jersey_barrier(Vector3(-22.0, 8.0, -48.0), 0.0)
+
+	_oil_drum(Vector3(2.4, 4.0, 34.0), false, rust_drum)
+	_oil_drum(Vector3(3.1, 4.0, 34.6), false, yellow_drum)
+	_oil_drum(Vector3(-13.0, 4.0, 20.0), true, rust_drum)
+
+	Forge.box(self, Vector3(-13.6, 4.9, 32.0), Vector3(0.35, 1.8, 0.35), Forge.material(Color(0.96, 0.45, 0.08)))
+	Forge.box(self, Vector3(-13.6, 5.1, 32.2), Vector3(0.30, 0.45, 0.15), Forge.material(Color(0.10, 0.35, 0.85)))
+	var sos_lbl := Forge.label(self, Vector3(-13.6, 5.1, 32.29), "SOS", Color(1, 1, 1), 32)
+	sos_lbl.pixel_size = 0.007
+	var panel := Forge.box(self, Vector3(-13.6, 5.95, 32.0), Vector3(0.55, 0.04, 0.45), dark_steel)
+	panel.rotation.x = 0.4
+
+func _traffic_cone(pos: Vector3) -> void:
+	Forge.box(self, pos + Vector3.UP * 0.02, Vector3(0.36, 0.04, 0.36), Forge.material(Color(0.12, 0.12, 0.12)))
+	Forge.cylinder(self, pos + Vector3.UP * 0.35, 0.14, 0.70, Forge.material(Color(0.96, 0.38, 0.06)), 0.03)
+	Forge.cylinder(self, pos + Vector3.UP * 0.36, 0.11, 0.14, Forge.material(Color(0.92, 0.94, 0.92), 0.1, 0.5, 0.4), 0.08)
+
+func _jersey_barrier(pos: Vector3, rot_y: float) -> void:
+	var barrier := Forge.box(self, pos + Vector3.UP * 0.42, Vector3(2.4, 0.84, 0.55), Forge.material(Color(0.35, 0.36, 0.35)), true)
+	barrier.rotation.y = rot_y
+	for i in 4:
+		var stripe := Forge.box(barrier, Vector3(-0.9 + i * 0.6, 0.0, 0.28), Vector3(0.24, 0.65, 0.02), Forge.material(Color(0.92, 0.68, 0.12) if i % 2 == 0 else Color(0.1, 0.1, 0.1)))
+		stripe.rotation.z = 0.5
+
+func _oil_drum(pos: Vector3, tipped: bool, mat: Material) -> void:
+	var drum := Forge.cylinder(self, pos + Vector3.UP * (0.28 if tipped else 0.45), 0.28, 0.88, mat)
+	if tipped:
+		drum.rotation.z = PI / 2
+		drum.rotation.y = 0.5
+	else:
+		for hy in [0.22, 0.66]:
+			Forge.cylinder(self, pos + Vector3.UP * hy, 0.295, 0.04, mat)
+
+func _highway_cobra_lamp(pos: Vector3, color: Color, height: float, arm_dir: Vector3) -> void:
+	var steel := Forge.material(Color(0.24, 0.27, 0.29), 0.65, 0, 0.45)
+	var dark_metal := Forge.material(Color(0.12, 0.14, 0.16), 0.8, 0, 0.5)
+	var lamp_glow := Forge.material(color, 0, 3.2, 0.2)
+	Forge.box(self, pos + Vector3.UP * 0.1, Vector3(0.5, 0.2, 0.5), dark_metal)
+	Forge.cylinder(self, pos + Vector3.UP * (height * 0.5), 0.12, height, steel, 0.08)
+	var arm_len := 2.6
+	var dir := arm_dir.normalized()
+	var tip_pos := pos + Vector3.UP * (height + 0.5) + dir * arm_len
+	var mid_pos := pos + Vector3.UP * (height + 0.3) + dir * (arm_len * 0.5)
+	_beam(pos + Vector3.UP * (height - 0.2), mid_pos, 0.09, steel)
+	_beam(mid_pos, tip_pos, 0.08, steel)
+	var head := Forge.box(self, tip_pos + Vector3.DOWN * 0.08, Vector3(0.42, 0.16, 0.85), dark_metal)
+	head.look_at(tip_pos + dir)
+	var lens := Forge.box(self, tip_pos + Vector3.DOWN * 0.14, Vector3(0.32, 0.05, 0.65), lamp_glow)
+	lens.look_at(tip_pos + dir)
+	var light := OmniLight3D.new()
+	light.position = tip_pos + Vector3.DOWN * 0.35
+	light.light_color = color
+	light.light_energy = 2.8
+	light.omni_range = 16.0
+	light.shadow_enabled = false
+	add_child(light)
+
+func _highway_lamps() -> void:
+	var lamp_color := Color(1.0, 0.65, 0.28)
+	_highway_cobra_lamp(Vector3(2, 4, 32), lamp_color, 6.8, Vector3(-1, 0, 0))
+	_highway_cobra_lamp(Vector3(-14, 4, 14), lamp_color, 6.8, Vector3(1, 0, 0))
+	_highway_cobra_lamp(Vector3(-35, 4, -2), lamp_color, 6.8, Vector3(0, 0, 1))
+	_highway_cobra_lamp(Vector3(-35, 8, -35), lamp_color, 6.8, Vector3(1, 0, 0))
+	_highway_cobra_lamp(Vector3(20, 8, -35), lamp_color, 6.8, Vector3(-1, 0, 0))
+
+func _highway_backdrop(concrete: Material) -> void:
+	var dark_facade := Forge.material(Color(0.10, 0.13, 0.15), 0.2, 0, 0.8)
+	var dark_steel := Forge.material(Color(0.14, 0.16, 0.18), 0.7, 0, 0.55)
+	var red_beacon := Forge.material(Color(1.0, 0.10, 0.05), 0.0, 3.5, 0.2)
+
+	Forge.box(self, Vector3(0, -12.4, 0), Vector3(400, 0.4, 400), Forge.material(Color(0.065, 0.07, 0.075)))
+
+	for i in 28:
+		var a := i * TAU / 28.0 + 0.05
+		var dist := 72.0 + (i % 4) * 16.0
+		var p := Vector3(sin(a), 0, cos(a)) * dist
+		var h := 16.0 + (i % 7) * 5.5
+		Forge.box(self, p + Vector3(0, h * 0.5 - 12, 0), Vector3(12.0, h, 14.0), dark_facade)
+		_city_facade(p, h, i)
+		if h > 24.0:
+			var crown_h := h * 0.35
+			Forge.box(self, p + Vector3(0, h - 12 + crown_h * 0.5, 0), Vector3(8.0, crown_h, 9.0), dark_facade)
+			Forge.cylinder(self, p + Vector3(0, h - 12 + crown_h + 3.0, 0), 0.08, 6.0, dark_steel)
+			Forge.sphere(self, p + Vector3(0, h - 12 + crown_h + 6.0, 0), 0.25, red_beacon)
+			if i % 3 == 0:
+				Forge.cylinder(self, p + Vector3(2.5, h - 12 + crown_h + 1.2, 2.0), 1.2, 2.4, Forge.material(Color(0.28, 0.20, 0.14)))
+			elif i % 3 == 1:
+				Forge.box(self, p + Vector3(-2.0, h - 12 + crown_h + 0.8, -1.5), Vector3(2.8, 1.6, 2.2), dark_steel)
+
+	for ring in [Vector3(0, 16.0, -110.0), Vector3(-110.0, 22.0, 10.0), Vector3(115.0, 18.0, -30.0)]:
+		Forge.box(self, ring, Vector3(90.0, 1.8, 12.0), concrete)
+		Forge.box(self, ring + Vector3.DOWN * 10.0, Vector3(3.2, 20.0, 3.2), concrete)
+
+	var bb_pos := Vector3(-24.0, 0.0, 48.0)
+	Forge.cylinder(self, bb_pos + Vector3.UP * 9.0, 0.42, 18.0, dark_steel)
+	Forge.box(self, bb_pos + Vector3.UP * 18.0, Vector3(14.0, 5.5, 0.4), dark_steel)
+	Forge.box(self, bb_pos + Vector3(0, 18.0, -0.22), Vector3(13.6, 5.1, 0.05), Forge.material(Color(0.12, 0.14, 0.16)))
+	var bb_lbl := Forge.label(self, bb_pos + Vector3(0, 18.0, -0.28), "[!] CINDER BIO-SCIENCES [!]\nQUARANTINE SECTOR 01 · 禁区封锁\nEVACUATION TERMINATED // NO SURVIVORS", Color(1.0, 0.80, 0.55), 44)
+	bb_lbl.pixel_size = 0.012
+	for fx in [-5.0, 5.0]:
+		Forge.box(self, bb_pos + Vector3(fx, 21.2, -1.2), Vector3(0.4, 0.2, 0.4), dark_steel)
+		_beam(bb_pos + Vector3(fx, 20.5, 0.0), bb_pos + Vector3(fx, 21.2, -1.2), 0.06, dark_steel)
+
+	for z in [42.0, 38.0, 34.0]:
+		for side in [-1, 1]:
+			var mark := Forge.box(self, Vector3(side * 8.4, 4.034, z), Vector3(1.1, 0.014, 0.20), Forge.material(Color(0.68, 0.46, 0.17), 0, 0, 0.91))
+			mark.rotation.y = side * 0.55
+	for x in [-25.0, 15.0]:
+		for i in 5:
+			var z := 11.0 + i * 1.65
+			_beam(Vector3(x, 13.45, z), Vector3(x + (2 if x < 0 else -2), 12.85, z + 0.45), 0.045, Forge.material(Color(0.25, 0.16, 0.095), 0.4, 0, 0.84))
+	for pos in [Vector3(-13, 4, 36), Vector3(-33, 8, -34)]:
+		Forge.box(self, pos + Vector3(0, 0.16, 0), Vector3(0.65, 0.32, 0.75), concrete)
+		for i in 3:
+			var slab := Forge.box(self, pos + Vector3(i * 0.30, 0.08, 0.45 + i * 0.22), Vector3(0.35, 0.12, 0.55), concrete)
+			slab.rotation.y = i * 0.7
 
 func _beam(a: Vector3, b: Vector3, thickness: float, material: Material) -> void:
 	var beam := Forge.box(self, (a + b) * 0.5, Vector3(thickness, thickness, a.distance_to(b)), material)
@@ -360,37 +788,16 @@ func _city_facade(p: Vector3, height: float, index: int) -> void:
 	var frame := Forge.material(Color(0.12, 0.135, 0.15), 0.2)
 	var glass := Forge.material(Color(0.16, 0.24, 0.29), 0.25, 0, 0.7)
 	var lit := Forge.material(Color(0.58, 0.39, 0.19), 0, 0.20)
+	var cyan_lit := Forge.material(Color(0.22, 0.55, 0.62), 0, 0.25)
 	for y in range(-7, int(height - 13), 4):
 		for x in [-3.4, -1.2, 1.2, 3.4]:
 			for side in [-1, 1]:
-				var window := Forge.box(self, p + Vector3(x, y, side * 6.015), Vector3(1.05, 1.65, 0.035), lit if (index + y + int(x * 3)) % 7 == 0 else glass)
+				var is_lit := (index + y + int(x * 3)) % 7 == 0
+				var lit_mat := cyan_lit if (index + int(x)) % 3 == 0 else lit
+				var window := Forge.box(self, p + Vector3(x, y, side * 6.015), Vector3(1.05, 1.65, 0.035), lit_mat if is_lit else glass)
 				window.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	Forge.box(self, p + Vector3(0, height - 11.6, 0), Vector3(10.6, 0.55, 12.6), frame)
 	Forge.box(self, p + Vector3(2, height - 10.7, 1), Vector3(2.5, 1.25, 3.0), frame)
-
-func _highway_detail(concrete: Material) -> void:
-	var rust := Forge.material(Color(0.25, 0.16, 0.095), 0.4, 0, 0.84)
-	var paint := Forge.material(Color(0.68, 0.46, 0.17), 0, 0, 0.91)
-	Forge.box(self, Vector3(0, -12.4, 0), Vector3(400, 0.4, 400), Forge.material(Color(0.07, 0.075, 0.08)))
-	for i in 18:
-		var angle := i * TAU / 18 + 0.08
-		var height := 28.0 + (i % 6) * 7.5
-		var p := Vector3(sin(angle) * 135, height * 0.5 - 12, cos(angle) * 135)
-		Forge.box(self, p, Vector3(10 + i % 4 * 3, height, 13), Forge.material(Color(0.105, 0.13, 0.145)))
-		Forge.box(self, p + Vector3(0, height * 0.5 + 1, 0), Vector3(7, 2, 9), Forge.material(Color(0.075, 0.09, 0.105)))
-	for z in [42.0, 38.0, 34.0]:
-		for side in [-1, 1]:
-			var mark := Forge.box(self, Vector3(side * 8.4, 4.034, z), Vector3(1.1, 0.014, 0.20), paint)
-			mark.rotation.y = side * 0.55
-	for x in [-25.0, 15.0]:
-		for i in 5:
-			var z := 11.0 + i * 1.65
-			_beam(Vector3(x, 13.45, z), Vector3(x + (2 if x < 0 else -2), 12.85, z + 0.45), 0.045, rust)
-	for pos in [Vector3(-13, 4, 36), Vector3(-33, 8, -34)]:
-		Forge.box(self, pos + Vector3(0, 0.16, 0), Vector3(0.65, 0.32, 0.75), concrete)
-		for i in 3:
-			var slab := Forge.box(self, pos + Vector3(i * 0.30, 0.08, 0.45 + i * 0.22), Vector3(0.35, 0.12, 0.55), concrete)
-			slab.rotation.y = i * 0.7
 
 func _ship_hull(center: Vector3, material: Material) -> void:
 	var tool := SurfaceTool.new()
@@ -474,15 +881,18 @@ func _torus(pos: Vector3, radius: float, thickness: float, material: Material) -
 
 func _weather(ash: bool) -> void:
 	var mesh := BoxMesh.new()
-	mesh.size = Vector3(0.03, 0.07, 0.03) if ash else Vector3(0.008, 0.38, 0.008)
+	mesh.size = Vector3(0.045, 0.075, 0.045) if ash else Vector3(0.008, 0.38, 0.008)
 	var shader := Shader.new()
-	shader.code = "shader_type spatial; render_mode unshaded, cull_disabled, depth_draw_never; void vertex(){ VERTEX.y -= mod(TIME * " + ("1.8" if ash else "18.0") + " + float(INSTANCE_ID) * 0.13, 26.0); } void fragment(){ ALBEDO = vec3(" + ("0.7,0.25,0.08" if ash else "0.47,0.57,0.62") + "); ALPHA = 0.28; }"
+	if ash:
+		shader.code = "shader_type spatial;\nrender_mode unshaded, cull_disabled, depth_draw_never;\nvarying flat float is_ember;\nvoid vertex() {\n\tVERTEX.y -= mod(TIME * 2.4 + float(INSTANCE_ID) * 0.17, 26.0);\n\tVERTEX.x += sin(TIME * 0.85 + float(INSTANCE_ID) * 0.31) * 0.6;\n\tVERTEX.z += cos(TIME * 0.65 + float(INSTANCE_ID) * 0.47) * 0.5;\n\tis_ember = (INSTANCE_ID % 3 == 0) ? 1.0 : 0.0;\n}\nvoid fragment() {\n\tALBEDO = (is_ember > 0.5) ? vec3(1.0, 0.44, 0.12) : vec3(0.24, 0.22, 0.20);\n\tALPHA = (is_ember > 0.5) ? 0.85 : 0.32;\n}"
+	else:
+		shader.code = "shader_type spatial; render_mode unshaded, cull_disabled, depth_draw_never; void vertex(){ VERTEX.y -= mod(TIME * 18.0 + float(INSTANCE_ID) * 0.13, 26.0); } void fragment(){ ALBEDO = vec3(0.47,0.57,0.62); ALPHA = 0.28; }"
 	var mat := ShaderMaterial.new()
 	mat.shader = shader
 	var multi := MultiMesh.new()
 	multi.transform_format = MultiMesh.TRANSFORM_3D
 	multi.mesh = mesh
-	multi.instance_count = 240
+	multi.instance_count = 360 if ash else 240
 	for i in multi.instance_count:
 		multi.set_instance_transform(i, Transform3D(Basis.IDENTITY, Vector3(rng.randf_range(-56, 56), 26, rng.randf_range(-56, 56))))
 	var visual := MultiMeshInstance3D.new()
@@ -490,6 +900,8 @@ func _weather(ash: bool) -> void:
 	visual.material_override = mat
 	visual.custom_aabb = AABB(Vector3(-58, 0, -58), Vector3(116, 30, 116))
 	visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	if is_instance_valid(game) and game.test_mode:
+		visual.visible = false
 	add_child(visual)
 
 func _bake_static_geometry() -> void:
