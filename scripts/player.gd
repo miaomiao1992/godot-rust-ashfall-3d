@@ -66,6 +66,7 @@ var bolt_timer := 0.0
 var bolt_sound_pending := false
 var bolt_handle: Node3D
 var active_grenade: int = -1
+var grenade_throw_action := ""
 
 func _ready() -> void:
 	WEAPONS = game.core.weapons()
@@ -109,6 +110,7 @@ func _ready() -> void:
 
 func _unhandled_input(event: InputEvent) -> void:
 	if not is_local or game.state != "playing" or (game.is_lan() and game.hud.menu.visible):
+		grenade_throw_action = ""
 		return
 	if event is InputEventMouseMotion and Input.mouse_mode == Input.MOUSE_MODE_CAPTURED:
 		var sensitivity: float = game.sensitivity / scope_zoom if scope_active() else game.sensitivity * (0.65 if aim > 0.5 else 1.0)
@@ -119,12 +121,15 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("flashlight"):
 		flashlight.visible = not flashlight.visible
 	if active_grenade >= 0:
-		if event.is_action_pressed("shoot"):
-			throw_active_grenade(false)
-			return
-		if event.is_action_pressed("aim"):
-			throw_active_grenade(true)
-			return
+		if life == "alive":
+			for action in ["shoot", "aim"]:
+				if event.is_action_pressed(action):
+					if grenade_throw_action.is_empty(): grenade_throw_action = action
+					return
+				if event.is_action_released(action):
+					if grenade_throw_action == action:
+						throw_active_grenade(action == "aim")
+					return
 	for i in WEAPONS.size():
 		if event.is_action_pressed("weapon_%d" % (i + 1)):
 			cancel_grenade()
@@ -148,6 +153,8 @@ func _unhandled_input(event: InputEvent) -> void:
 			select_grenade(0 if active_grenade != 0 else (active_grenade + 1) % 3)
 
 func _physics_process(delta: float) -> void:
+	if life != "alive" or game.state != "playing" or (game.is_lan() and game.hud.menu.visible):
+		grenade_throw_action = ""
 	if game.state != "playing":
 		return
 	if game.is_lan() and not is_local and not game.lan.host(): return
@@ -214,7 +221,7 @@ func _physics_process(delta: float) -> void:
 		bob = lerpf(bob, 0, delta * 5)
 	var weapon: Dictionary = WEAPONS[weapon_index]
 	var wants_fire := Input.is_action_pressed("shoot") if weapon.auto else Input.is_action_just_pressed("shoot")
-	if is_local and life == "alive" and not (game.is_lan() and game.hud.menu.visible) and wants_fire and shot_timer <= 0 and reload_timer <= 0 and not sprinting:
+	if active_grenade < 0 and is_local and life == "alive" and not (game.is_lan() and game.hud.menu.visible) and wants_fire and shot_timer <= 0 and reload_timer <= 0 and not sprinting:
 		if magazines[weapon_index] > 0:
 			fire()
 		elif empty_timer <= 0:
@@ -340,15 +347,18 @@ func select_grenade(kind: int) -> void:
 		game.hud.toast("投掷物耗尽", Color(1, 0.4, 0.4), 1.5)
 		return
 	active_grenade = kind
-	game.hud.toast("已切入手雷 · 鼠标左键高抛 / 右键轻掷", Color(0.3, 0.9, 1.0), 1.8)
+	grenade_throw_action = ""
+	game.hud.toast("按住鼠标准备 · 松开左键高抛 / 右键轻掷", Color(0.3, 0.9, 1.0), 1.8)
 	_build_weapon()
 
 func cancel_grenade() -> void:
+	grenade_throw_action = ""
 	if active_grenade >= 0:
 		active_grenade = -1
 		_build_weapon()
 
 func throw_active_grenade(soft_toss: bool = false) -> void:
+	grenade_throw_action = ""
 	if active_grenade < 0: return
 	var kind := active_grenade
 	active_grenade = -1
@@ -362,8 +372,6 @@ func throw_active_grenade(soft_toss: bool = false) -> void:
 
 func fire(sequence: int = 0) -> void:
 	if active_grenade >= 0:
-		if shot_timer > 0: return
-		throw_active_grenade(false)
 		return
 	if game.is_lan():
 		if life != "alive": return

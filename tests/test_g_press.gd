@@ -48,10 +48,41 @@ func _initialize() -> void:
 	ev_shoot.action = "shoot"
 	ev_shoot.pressed = true
 	p._unhandled_input(ev_shoot)
+	Input.action_press("shoot")
+	p.shot_timer = 0
+	p.fire()
 	for f in 5:
 		await process_frame
 		await physics_frame
+	assert(p.active_grenade == 2, "Holding left mouse must keep the grenade in hand")
+	Input.action_release("shoot")
+	ev_shoot.pressed = false
+	p._unhandled_input(ev_shoot)
 	assert(p.active_grenade == -1, "Throwing should switch back to gun")
-	print("Grenade thrown via left click and weapon restored without crash!")
+	assert(p.grenade_throw_action.is_empty())
+	print("Left mouse holds grenade; release throws and restores weapon")
+	p.select_grenade(0)
+	var ev_aim := InputEventAction.new()
+	ev_aim.action = "aim"
+	ev_aim.pressed = false
+	p._unhandled_input(ev_aim)
+	assert(p.active_grenade == 0, "Unarmed release must not throw")
+	ev_aim.pressed = true
+	p._unhandled_input(ev_aim)
+	for f in 5:
+		await process_frame
+	assert(p.active_grenade == 0, "Holding right mouse must keep the grenade in hand")
+	ev_aim.pressed = false
+	p._unhandled_input(ev_aim)
+	assert(p.active_grenade == -1, "Right mouse release throws")
+	p.select_grenade(1)
+	ev_shoot.pressed = true
+	p._unhandled_input(ev_shoot)
+	p.cancel_grenade()
+	p.select_grenade(0)
+	ev_shoot.pressed = false
+	p._unhandled_input(ev_shoot)
+	assert(p.active_grenade == 0, "Cancelled throw must not carry over to next grenade")
+	print("Right mouse release and switch cancellation passed")
 	print("ALL GRENADE INPUT/SELECTION TESTS PASSED")
 	quit(0)
