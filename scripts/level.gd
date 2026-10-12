@@ -127,8 +127,6 @@ func _docks() -> void:
 	fall_threshold = -1.0
 	var deck := Forge.material(Color(0.21, 0.27, 0.29), 0.1, 0, 0.85)
 	var steel := Forge.material(Color(0.2, 0.27, 0.28), 0.65, 0, 0.72)
-	# Water is a rough dielectric, not polished metal. Broad point-light
-	# highlights on the huge water plane were overpowering the pier floor.
 	var water := ShaderMaterial.new()
 	water.shader = preload("res://shaders/harbor_water.gdshader")
 	Forge.box(self, Vector3(0, -0.55, 0), Vector3(1600, 0.03, 1600), water).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -136,42 +134,118 @@ func _docks() -> void:
 		_deck(Rect2i(x, 2, 3, 24), 0, deck)
 	_deck(Rect2i(1, 15, 27, 2), 0, deck)
 	_deck(Rect2i(1, 24, 27, 4), 0, deck)
-	# Only the eastern loading pier climbs. Navigation and hazard height follow its slope.
 	_deck(Rect2i(16, 2, 3, 10), 2.8, steel)
 	_ramp(Rect2i(16, 12, 3, 3), 0, 2.8, steel)
 	Forge.box(self, Vector3(12, 1.1, -30), Vector3(12, 2.2, 40), steel, true)
 	for i in 2:
-		var fill_height := 2.8 - (i + 1) * 2.8 / 3.0
-		Forge.box(self, Vector3(12, fill_height * 0.5, -8 + i * 4), Vector3(12, fill_height, 4), steel, true)
+		var fill_height: float = 2.8 - float(i + 1) * 2.8 / 3.0
+		Forge.box(self, Vector3(12, fill_height * 0.5, float(-8 + i * 4)), Vector3(12, fill_height, 4), steel, true)
 	for rect in [Rect2i(4, 6, 1, 3), Rect2i(5, 12, 2, 2), Rect2i(10, 9, 1, 4), Rect2i(11, 19, 2, 2), Rect2i(17, 5, 2, 3), Rect2i(16, 9, 1, 2), Rect2i(22, 10, 1, 4), Rect2i(23, 19, 2, 2)]:
 		_container(rect)
 	_guardrails(Color(0.48, 0.47, 0.33))
-	for x in [-36.0, -12.0, 12.0, 36.0]:
-		for z in [-46.0, -12.0, 38.0]:
-			var p := ground_point(Vector3(x, 0, z))
-			Forge.cylinder(self, p + Vector3(0, -2.5, 0), 0.55, 5, steel)
-		_lamp(ground_point(Vector3(x + 4, 0, 33)), Color(0.18, 0.76, 0.95), 7)
-		var label := Forge.label(self, ground_point(Vector3(x, 0, -47)) + Vector3.UP * 3, "PIER %02d" % int((x + 36) / 24 + 1), Color(0.3, 0.83, 0.92), 48)
-		label.pixel_size = 0.009
-	# Massive gantry frames, ropes and a moored hull occupy the actual water skyline.
+
 	var crane_mat := Forge.material(Color(0.53, 0.31, 0.11), 0.65)
-	for x in [-32.0, 40.0]:
-		for side in [-1, 1]:
-			Forge.box(self, Vector3(x + side * 7, 11, -30), Vector3(0.8, 22, 1.0), crane_mat)
-		Forge.box(self, Vector3(x, 22, -30), Vector3(17, 1.4, 1.5), crane_mat)
-		Forge.box(self, Vector3(x, 22, -17), Vector3(1.5, 1.5, 31), crane_mat)
-		Forge.cylinder(self, Vector3(x, 16, -9), 0.045, 12, steel)
-		Forge.box(self, Vector3(x, 9.8, -9), Vector3(0.6, 0.45, 0.6), crane_mat)
-	_ship_hull(Vector3(-63, 0, -10), Forge.material(Color(0.085, 0.12, 0.14), 0.45, 0, 0.75))
-	Forge.box(self, Vector3(-63, 5.7, 9), Vector3(12, 6.2, 14), Forge.material(Color(0.38, 0.42, 0.39)))
-	Forge.box(self, Vector3(-63, 10, 9), Vector3(10, 2, 10), Forge.material(Color(0.075, 0.16, 0.18), 0.7))
-	for x in [-19.0, 5.0, 29.0]:
-		for z in range(-46, 32, 8):
-			Forge.box(self, Vector3(x, -0.5, z), Vector3(7, 0.01, 0.07), Forge.material(Color(0.09, 0.24, 0.28), 0.6))
-	Forge.label(self, Vector3(-8, 4.0, 39), "横桥换线 ← → CROSS DOCK", Color(0.53, 0.86, 0.87), 42)
-	spawn_points = [ground_point(Vector3(-36, 0, -46)), ground_point(Vector3(-12, 0, -46)), ground_point(Vector3(12, 0, -46)), ground_point(Vector3(36, 0, -46))]
+	_docks_substructure(steel)
+	_docks_gantry_cranes(crane_mat, steel)
+	_docks_ship(crane_mat, steel)
+	_docks_sunken_vessel(steel)
+	_docks_props(steel)
+	_docks_signs()
 	_harbor_detail(crane_mat)
 	_weather(false)
+	spawn_points = [ground_point(Vector3(-36, 0, -46)), ground_point(Vector3(-12, 0, -46)), ground_point(Vector3(12, 0, -46)), ground_point(Vector3(36, 0, -46))]
+
+func _docks_substructure(steel: Material) -> void:
+	var dark_iron := Forge.material(Color(0.14, 0.15, 0.16), 0.8, 0, 0.6)
+	var rubber := Forge.material(Color(0.035, 0.04, 0.04), 0, 0, 0.92)
+	for x in [-36.0, -12.0, 12.0, 36.0]:
+		for z in [-46.0, -32.0, -18.0, -4.0, 10.0, 24.0, 38.0]:
+			var p := ground_point(Vector3(x, 0, z))
+			Forge.cylinder(self, p + Vector3(0, -2.5, 0), 0.55, 5.0, steel)
+			for side in [-1.0, 1.0]:
+				var edge_pos := p + Vector3(side * 5.4, 0.0, 0.0)
+				var fender := Forge.cylinder(self, edge_pos + Vector3(side * 0.45, -0.35, 0.0), 0.42, 0.22, rubber)
+				fender.rotation.z = PI / 2
+				if int(z) % 16 == 0:
+					Forge.box(self, edge_pos + Vector3(0, 0.12, 0), Vector3(0.55, 0.24, 0.35), dark_iron)
+					Forge.cylinder(self, edge_pos + Vector3(0, 0.35, -0.12), 0.10, 0.45, dark_iron)
+					Forge.cylinder(self, edge_pos + Vector3(0, 0.35, 0.12), 0.10, 0.45, dark_iron)
+
+func _docks_gantry_cranes(crane_mat: Material, steel: Material) -> void:
+	for x in [-32.0, 40.0]:
+		for side in [-1.0, 1.0]:
+			Forge.box(self, Vector3(x + side * 7.0, 11.0, -30.0), Vector3(0.9, 22.0, 1.1), crane_mat)
+			Forge.box(self, Vector3(x + side * 7.0, 11.0, -16.0), Vector3(0.9, 22.0, 1.1), crane_mat)
+			_beam(Vector3(x + side * 7.0, 2.0, -30.0), Vector3(x + side * 7.0, 20.0, -16.0), 0.15, crane_mat)
+			_beam(Vector3(x + side * 7.0, 2.0, -16.0), Vector3(x + side * 7.0, 20.0, -30.0), 0.15, crane_mat)
+		Forge.box(self, Vector3(x, 22.0, -23.0), Vector3(17.0, 1.5, 18.0), crane_mat)
+		Forge.box(self, Vector3(x, 22.0, -10.0), Vector3(1.6, 1.6, 44.0), crane_mat)
+		Forge.box(self, Vector3(x, 21.0, -22.0), Vector3(3.8, 2.6, 3.8), crane_mat)
+		Forge.box(self, Vector3(x, 21.2, -20.0), Vector3(2.8, 1.3, 0.08), Forge.material(Color(0.12, 0.65, 0.78), 0, 1.0))
+		for cable_z in [-16.0, -8.0, 0.0]:
+			Forge.cylinder(self, Vector3(x, 15.0, cable_z), 0.035, 14.0, steel)
+		Forge.box(self, Vector3(x, 7.8, -8.0), Vector3(4.5, 0.6, 2.4), steel)
+
+func _docks_ship(crane_mat: Material, steel: Material) -> void:
+	var hull_mat := Forge.material(Color(0.085, 0.12, 0.14), 0.45, 0, 0.75)
+	var deck_house := Forge.material(Color(0.36, 0.40, 0.38), 0.20, 0, 0.65)
+	var funnel_mat := Forge.material(Color(0.16, 0.18, 0.20), 0.50, 0, 0.50)
+	var funnel_orange := Forge.material(Color(0.92, 0.42, 0.08), 0.10, 0, 0.40)
+	var mast_beacon := Forge.material(Color(1.0, 0.10, 0.05), 0.0, 3.5, 0.2)
+	var bridge_glass := Forge.material(Color(0.15, 0.55, 0.65), 0.0, 1.2, 0.3)
+
+	_ship_hull(Vector3(-63.0, 0.0, -10.0), hull_mat)
+	Forge.box(self, Vector3(-63.0, 5.5, 9.0), Vector3(12.5, 5.5, 15.0), deck_house)
+	Forge.box(self, Vector3(-63.0, 9.8, 9.0), Vector3(10.5, 3.5, 11.0), deck_house)
+	Forge.box(self, Vector3(-63.0, 12.8, 8.5), Vector3(12.0, 2.4, 7.5), deck_house)
+	Forge.box(self, Vector3(-63.0, 13.0, 5.0), Vector3(10.0, 1.0, 0.08), bridge_glass)
+
+	Forge.cylinder(self, Vector3(-63.0, 16.5, 11.5), 1.2, 5.0, funnel_mat)
+	Forge.cylinder(self, Vector3(-63.0, 17.5, 11.5), 1.22, 1.2, funnel_orange)
+	Forge.cylinder(self, Vector3(-63.0, 18.0, 4.5), 0.09, 8.5, steel)
+	Forge.sphere(self, Vector3(-63.0, 22.3, 4.5), 0.25, mast_beacon)
+	for z in range(-28, 15, 6):
+		for side in [-1.0, 1.0]:
+			Forge.cylinder(self, Vector3(-63.0 + side * 7.2, 4.5, float(z)), 0.045, 1.4, steel)
+			Forge.box(self, Vector3(-63.0 + side * 7.2, 5.15, float(z)), Vector3(0.06, 0.06, 6.0), steel)
+	Forge.box(self, Vector3(-70.4, 2.65, -12.0), Vector3(0.045, 0.27, 39.0), Forge.material(Color(0.46, 0.23, 0.11), 0.3))
+	Forge.label(self, Vector3(-62.9, 7.8, 16.1), "C I N D E R  /  0 7", Color(0.63, 0.65, 0.56), 48).pixel_size = 0.012
+
+func _docks_sunken_vessel(steel: Material) -> void:
+	var boat_mat := Forge.material(Color(0.18, 0.20, 0.22), 0.40, 0, 0.70)
+	var rust_mat := Forge.material(Color(0.38, 0.20, 0.10), 0.20, 0, 0.85)
+	var center := Vector3(-24.0, -0.65, 6.0)
+	var boat := Node3D.new()
+	add_child(boat)
+	boat.position = center
+	boat.rotation_degrees = Vector3(18.0, 32.0, -22.0)
+	Forge.box(boat, Vector3(0, 0, 0), Vector3(4.5, 2.2, 12.0), boat_mat)
+	Forge.box(boat, Vector3(0, 1.6, 2.5), Vector3(3.5, 1.8, 4.5), rust_mat)
+	Forge.cylinder(boat, Vector3(0, 3.8, 2.0), 0.06, 3.5, steel)
+
+	for i in 4:
+		var drum := Forge.cylinder(self, center + Vector3(float(i * 2 - 3), 0.1, float(i - 2)), 0.28, 0.88, rust_mat)
+		drum.rotation.z = PI / 2 + 0.3 * float(i)
+		drum.rotation.y = float(i)
+
+func _docks_props(steel: Material) -> void:
+	var wood := Forge.material(Color(0.42, 0.32, 0.20), 0.0, 0, 0.85)
+	var dark_steel := Forge.material(Color(0.16, 0.18, 0.20), 0.7, 0, 0.5)
+	for px in [-35.0, -11.0, 13.0, 37.0]:
+		for pz in [-20.0, 16.0]:
+			Forge.box(self, Vector3(px, 0.12, pz), Vector3(2.2, 0.24, 2.2), wood)
+			Forge.box(self, Vector3(px, 0.72, pz), Vector3(1.8, 0.95, 1.8), wood)
+			Forge.cylinder(self, Vector3(px, 0.65, pz + 2.5), 0.45, 0.75, dark_steel)
+
+func _docks_signs() -> void:
+	for x in [-36.0, -12.0, 12.0, 36.0]:
+		_lamp(ground_point(Vector3(x + 4.0, 0.0, 33.0)), Color(0.18, 0.76, 0.95), 7.0)
+		var label := Forge.label(self, ground_point(Vector3(x, 0.0, -47.0)) + Vector3.UP * 3.0, "PIER %02d" % int((x + 36.0) / 24.0 + 1.0), Color(0.3, 0.83, 0.92), 48)
+		label.pixel_size = 0.009
+	for x in [-19.0, 5.0, 29.0]:
+		for z in range(-46, 32, 8):
+			Forge.box(self, Vector3(float(x), -0.5, float(z)), Vector3(7.0, 0.01, 0.07), Forge.material(Color(0.09, 0.24, 0.28), 0.6))
+	Forge.label(self, Vector3(-8.0, 4.0, 39.0), "横桥换线 << >> CROSS DOCK", Color(0.53, 0.86, 0.87), 42)
 
 func _laboratory() -> void:
 	spatial_type = "enclosed_annular_core_arena"
@@ -194,80 +268,155 @@ func _laboratory() -> void:
 			if pos.length() <= 46 and pos.length() >= 11:
 				grid.set_point_solid(cell, false)
 				floor_heights[cell] = 0.0
-	# Cylindrical core blocks sight and forces real clockwise/counter-clockwise flanks.
+
 	var core_base := Forge.cylinder(self, Vector3(0, 7.5, 0), 8.3, 15, steel)
 	core_base.mesh.radial_segments = 32
 	_add_cylinder_collision(Vector3(0, 7.5, 0), 8.3, 15)
+
+	_lab_core(steel)
+	_lab_floor_markings()
+	_lab_blast_gates(steel)
+	_lab_coolant_tanks(steel, light_panel)
+	_lab_catwalk_and_truss(steel, light_panel)
+
+	for p in [Vector3(-28, 0, 0), Vector3(28, 0, 16), Vector3(8, 0, -32)]:
+		_terminal(p, terminals.size())
+
+	for i in 8:
+		var a: float = float(i) * TAU / 8.0 + PI / 8.0
+		_lamp(Vector3(sin(a) * 39.0, 0.0, cos(a) * 39.0), Color(0.66, 0.83, 0.9), 7.0)
+
+	var glow := OmniLight3D.new()
+	glow.position = Vector3(0, 17, 0)
+	glow.omni_range = 43.0
+	glow.light_color = Color(1.0, 0.24, 0.08)
+	glow.light_energy = 3.2
+	add_child(glow)
+
+	spawn_points = [Vector3(0, 0, -42), Vector3(42, 0, 0), Vector3(0, 0, 42), Vector3(-42, 0, 0)]
+
+func _lab_core(steel: Material) -> void:
+	var plasma_glow := Forge.material(Color(1.0, 0.35, 0.08), 0.0, 3.5, 0.2)
+	var core_yellow := Forge.material(Color(1.0, 0.85, 0.20), 0.0, 3.0, 0.2)
+	var dark_steel := Forge.material(Color(0.12, 0.13, 0.15), 0.80, 0, 0.50)
+
+	for i in 16:
+		var a: float = float(i) * TAU / 16.0
+		var r_dir := Vector3(sin(a), 0, cos(a))
+		var rib := Forge.box(self, r_dir * 8.65 + Vector3.UP * 7.5, Vector3(0.55, 14.8, 0.9), dark_steel)
+		rib.rotation.y = a
+		for ly in [3.0, 6.0, 9.0, 12.0]:
+			var louver := Forge.box(self, r_dir * 9.15 + Vector3.UP * float(ly), Vector3(0.65, 0.18, 0.4), core_yellow)
+			louver.rotation.y = a
+
 	for y in [2.0, 6.0, 10.0, 14.0]:
-		_torus(Vector3(0, y, 0), 8.45, 0.11, Forge.material(Color(1, 0.27, 0.08), 0, 1.5))
-	var core_light := Forge.cylinder(self, Vector3(0, 17, 0), 5.8, 7, Forge.material(Color(1, 0.11, 0.045), 0, 1.2))
+		_torus(Vector3(0, float(y), 0), 8.45, 0.16, plasma_glow)
+		_torus(Vector3(0, float(y), 0), 8.75, 0.08, steel)
+
+	var core_light := Forge.cylinder(self, Vector3(0, 17, 0), 5.8, 7, Forge.material(Color(1, 0.15, 0.05), 0, 2.2))
 	core_light.mesh.radial_segments = 32
-	_torus(Vector3(0, 21, 0), 7, 0.25, steel)
-	for i in 32:
-		var a := i * TAU / 32
-		var dir := Vector3(sin(a), 0, cos(a))
-		if i % 8 != 0:
-			var wall := Forge.box(self, dir * 48 + Vector3.UP * 5.5, Vector3(9.6, 11, 1.3), light_panel, true)
-			wall.rotation.y = a
-			var trim := Forge.box(self, dir * 47.25 + Vector3.UP * 3.4, Vector3(9.1, 0.22, 0.08), Forge.material(Color(0.17, 0.66, 0.76), 0, 0.8))
-			trim.rotation.y = a
-		Forge.cylinder(self, dir * 46 + Vector3.UP * 6, 0.22, 12, steel)
-		var beam := Forge.box(self, dir * 31 + Vector3.UP * 12, Vector3(0.4, 0.4, 30), steel)
-		beam.rotation.y = a
+	_torus(Vector3(0, 21, 0), 7.2, 0.32, steel)
+	_torus(Vector3(0, 17, 0), 6.1, 0.22, plasma_glow)
+
+func _lab_floor_markings() -> void:
+	var hazard_mat := Forge.material(Color(0.85, 0.65, 0.10), 0.0, 0, 0.5)
+	var cyan_grid := Forge.material(Color(0.18, 0.72, 0.85), 0.0, 1.5, 0.2)
+	_torus(Vector3(0, 0.022, 0), 10.5, 0.12, hazard_mat)
+	_torus(Vector3(0, 0.025, 0), 20.0, 0.06, cyan_grid)
+	_torus(Vector3(0, 0.025, 0), 36.0, 0.06, cyan_grid)
 	for i in 4:
-		var a := i * PI / 2
+		var a: float = float(i) * PI / 2.0
+		var dir := Vector3(sin(a), 0, cos(a))
+		for r in range(12, 45, 4):
+			Forge.box(self, dir * float(r) + Vector3.UP * 0.022, Vector3(0.18, 0.02, 2.2) if i % 2 == 0 else Vector3(2.2, 0.02, 0.18), cyan_grid)
+
+func _lab_blast_gates(steel: Material) -> void:
+	var hazard_stripe := Forge.material(Color(0.92, 0.68, 0.12), 0.0, 0, 0.4)
+	var status_glow := Forge.material(Color(0.17, 0.76, 0.85), 0.0, 1.2, 0.2)
+	var red_beacon := Forge.material(Color(1.0, 0.18, 0.10), 0.0, 3.2, 0.2)
+
+	for i in 4:
+		var a: float = float(i) * PI / 2.0
 		var dir := Vector3(sin(a), 0, cos(a))
 		var gate := Node3D.new()
 		add_child(gate)
-		gate.position = dir * 46
+		gate.position = dir * 46.0
 		gate.rotation.y = a
-		for side in [-1, 1]:
-			Forge.box(gate, Vector3(side * 4.8, 4, 0), Vector3(1, 8, 3), steel, true)
-		Forge.box(gate, Vector3(0, 8, 0), Vector3(10.5, 1, 3), steel)
-		# Enemies enter on the arena side. A physical rear bulkhead prevents
-		# shotgun knockback from ejecting them off the circular floor.
-		Forge.box(gate, Vector3(0, 3.5, 1.6), Vector3(8.6, 7, 0.4), steel, true)
-		for side in [-1, 1]:
-			Forge.box(gate, Vector3(side * 3.5, 3.5, 1.38), Vector3(0.14, 5.5, 0.04), Forge.material(Color(0.17, 0.66, 0.76), 0, 0.8))
-		Forge.label(gate, Vector3(0, 6.5, -1.6), "AIRLOCK %s" % ["S", "E", "N", "W"][i], Color(0.72, 0.91, 0.9), 48)
-		for r in range(15, 44, 5):
-			Forge.box(self, dir * r + Vector3.UP * 0.022, Vector3(0.12, 0.02, 2) if i % 2 == 0 else Vector3(2, 0.02, 0.12), Forge.material(Color(0.73, 0.41, 0.12)))
-	_torus(Vector3(0, 0.022, 0), 20, 0.04, Forge.material(Color(0.3, 0.52, 0.54), 0, 0.5))
-	_torus(Vector3(0, 0.025, 0), 36, 0.04, Forge.material(Color(0.3, 0.52, 0.54), 0, 0.5))
+		for side in [-1.0, 1.0]:
+			Forge.box(gate, Vector3(side * 4.8, 4.0, 0.0), Vector3(1.2, 8.0, 3.2), steel, true)
+			Forge.cylinder(gate, Vector3(side * 4.2, 4.0, -0.6), 0.12, 6.0, steel)
+		Forge.box(gate, Vector3(0, 8.0, 0), Vector3(10.8, 1.2, 3.2), steel)
+		Forge.box(gate, Vector3(0, 3.5, 1.6), Vector3(8.6, 7.0, 0.4), steel, true)
+		for side in [-1.0, 1.0]:
+			Forge.box(gate, Vector3(side * 3.5, 3.5, 1.38), Vector3(0.18, 5.5, 0.05), status_glow)
+			Forge.box(gate, Vector3(side * 4.6, 4.0, 1.5), Vector3(0.35, 7.0, 0.05), hazard_stripe)
+		Forge.sphere(gate, Vector3(0, 8.8, 0), 0.30, red_beacon)
+		var label := Forge.label(gate, Vector3(0, 6.5, -1.6), "AIRLOCK %s" % ["S", "E", "N", "W"][i], Color(0.72, 0.91, 0.9), 48)
+		label.pixel_size = 0.010
+
+func _lab_coolant_tanks(steel: Material, light_panel: Material) -> void:
+	var tank_mat := Forge.material(Color(0.18, 0.22, 0.25), 0.75, 0, 0.40)
+	var cyan_fluid := Forge.material(Color(0.12, 0.75, 0.88), 0.0, 2.5, 0.2)
 	for p in [Vector3(-22, 0, -22), Vector3(22, 0, -22), Vector3(-22, 0, 22), Vector3(22, 0, 22)]:
 		var cell := world_cell(p)
 		var origin := cell - Vector2i.ONE
 		_block(Rect2i(origin, Vector2i(2, 2)))
 		var center := Vector3(-58 + (origin.x + 1) * 4, 0, -58 + (origin.y + 1) * 4)
-		Forge.box(self, center + Vector3.UP * 2, Vector3(7.2, 4, 7.2), steel, true)
-		for offset in [-1.8, 1.8]:
-			Forge.cylinder(self, center + Vector3(offset, 5.8, 0), 0.7, 3.6, light_panel)
-		Forge.box(self, center + Vector3(0, 2.7, 3.65), Vector3(5, 0.65, 0.08), Forge.material(Color(0.2, 0.69, 0.8), 0, 1))
-	for p in [Vector3(-28, 0, 0), Vector3(28, 0, 16), Vector3(8, 0, -32)]:
-		_terminal(p, terminals.size())
-	for i in 8:
-		var a := i * TAU / 8 + PI / 8
-		_lamp(Vector3(sin(a) * 39, 0, cos(a) * 39), Color(0.66, 0.83, 0.9), 7)
-	var glow := OmniLight3D.new()
-	glow.position = Vector3(0, 17, 0)
-	glow.omni_range = 43
-	glow.light_color = Color(1, 0.24, 0.08)
-	glow.light_energy = 3
-	add_child(glow)
-	spawn_points = [Vector3(0, 0, -42), Vector3(42, 0, 0), Vector3(0, 0, 42), Vector3(-42, 0, 0)]
+		Forge.box(self, center + Vector3.UP * 2.0, Vector3(7.2, 4.0, 7.2), steel, true)
+		for tx in [-1.8, 1.8]:
+			for tz in [-1.8, 1.8]:
+				Forge.cylinder(self, center + Vector3(tx, 5.2, tz), 1.1, 4.2, tank_mat)
+				Forge.cylinder(self, center + Vector3(tx, 5.2, tz + 1.15), 0.08, 3.6, cyan_fluid)
+		Forge.box(self, center + Vector3(0, 2.7, 3.65), Vector3(5.0, 0.65, 0.08), cyan_fluid)
+
+func _lab_catwalk_and_truss(steel: Material, light_panel: Material) -> void:
+	for i in 32:
+		var a: float = float(i) * TAU / 32.0
+		var dir := Vector3(sin(a), 0, cos(a))
+		if i % 8 != 0:
+			var wall := Forge.box(self, dir * 48.0 + Vector3.UP * 5.5, Vector3(9.6, 11.0, 1.3), light_panel, true)
+			wall.rotation.y = a
+			var trim := Forge.box(self, dir * 47.25 + Vector3.UP * 3.4, Vector3(9.1, 0.22, 0.08), Forge.material(Color(0.17, 0.66, 0.76), 0, 0.8))
+			trim.rotation.y = a
+		Forge.cylinder(self, dir * 46.0 + Vector3.UP * 6.0, 0.22, 12.0, steel)
+		var beam := Forge.box(self, dir * 31.0 + Vector3.UP * 12.0, Vector3(0.4, 0.4, 30.0), steel)
+		beam.rotation.y = a
+	_torus(Vector3(0, 12.0, 0), 45.5, 0.22, steel)
+	_torus(Vector3(0, 12.0, 0), 20.0, 0.18, steel)
 
 func _terminal(pos: Vector3, index: int) -> void:
 	var root := Node3D.new()
 	add_child(root)
 	root.position = pos
-	Forge.box(root, Vector3(0, 0.65, 0), Vector3(1.4, 1.3, 1.1), Forge.material(Color(0.22, 0.24, 0.25), 0.65), true)
-	var screen := Forge.box(root, Vector3(0, 1.45, -0.12), Vector3(1.2, 0.65, 0.18), Forge.material(Color(0.94, 0.3, 0.06), 0, 1))
-	var valve := Forge.cylinder(root, Vector3(0, 1.6, 0.14), 0.32, 0.12, Forge.material(Color(0.53, 0.55, 0.53), 0.65))
+	var dark_steel := Forge.material(Color(0.20, 0.22, 0.24), 0.70, 0, 0.55)
+	var pipe_copper := Forge.material(Color(0.65, 0.42, 0.22), 0.80, 0, 0.35)
+	var valve_wheel_mat := Forge.material(Color(0.85, 0.25, 0.18), 0.30, 0, 0.50)
+	var gauge_dial := Forge.material(Color(0.92, 0.94, 0.90), 0.0, 0, 0.40)
+
+	Forge.box(root, Vector3(0, 0.65, 0), Vector3(1.5, 1.3, 1.2), dark_steel, true)
+	Forge.box(root, Vector3(0, 1.32, -0.22), Vector3(1.4, 0.15, 0.5), dark_steel)
+
+	for gx in [-0.42, 0.42]:
+		Forge.cylinder(root, Vector3(float(gx), 1.55, -0.28), 0.15, 0.08, dark_steel)
+		Forge.cylinder(root, Vector3(float(gx), 1.55, -0.23), 0.12, 0.03, gauge_dial)
+
+	var dir_to_core: Vector3 = (-pos).normalized()
+	var pipe_len: float = pos.length() - 8.3
+	var pipe_mid: Vector3 = dir_to_core * (pipe_len * 0.5)
+	var pipe_stem := Forge.box(root, Vector3(0, 0.25, 0) + pipe_mid, Vector3(0.22, 0.22, pipe_len), pipe_copper)
+	pipe_stem.look_at(root.global_position + dir_to_core * pipe_len)
+
+	var screen := Forge.box(root, Vector3(0, 1.48, -0.08), Vector3(1.2, 0.65, 0.18), Forge.material(Color(0.94, 0.3, 0.06), 0, 1))
+	var valve := Forge.cylinder(root, Vector3(0, 1.62, 0.16), 0.36, 0.14, valve_wheel_mat)
 	valve.rotation.x = PI / 2
+	for spoke in 3:
+		var sp := Forge.box(root, Vector3(0, 1.62, 0.16), Vector3(0.68, 0.06, 0.06), dark_steel)
+		sp.rotation.z = float(spoke) * PI / 3.0
+
 	var name: String = "冷却阀 " + ["A", "B", "C"][index]
-	var label := Forge.label(root, Vector3(0, 2.35, 0), name + " / E", Color(1, 0.65, 0.2), 36)
+	var label := Forge.label(root, Vector3(0, 2.45, 0), name + " / E", Color(1, 0.65, 0.2), 36)
 	label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
-	label.pixel_size = 0.01
+	label.pixel_size = 0.010
 	_block(Rect2i(world_cell(pos), Vector2i.ONE))
 	terminals.append({"position": pos, "name": name, "activated": false, "screen": screen, "label": label})
 
@@ -291,20 +440,31 @@ func _guardrails(color: Color) -> void:
 
 func _container(rect: Rect2i) -> void:
 	var base := cell_world(rect.position)
-	var center := base + Vector3((rect.size.x - 1) * 2, 0, (rect.size.y - 1) * 2)
-	var color: Color = [Color(0.1, 0.25, 0.3), Color(0.43, 0.22, 0.11), Color(0.25, 0.31, 0.18)][rect.position.x % 3]
+	var center := base + Vector3(float(rect.size.x - 1) * 2.0, 0.0, float(rect.size.y - 1) * 2.0)
+	var colors := [Color(0.12, 0.28, 0.35), Color(0.48, 0.24, 0.12), Color(0.24, 0.32, 0.18), Color(0.85, 0.62, 0.10)]
+	var color: Color = colors[rect.position.x % colors.size()]
+	var corner_steel := Forge.material(Color(0.14, 0.15, 0.16), 0.75, 0, 0.45)
+	var sx: float = float(rect.size.x) * 4.0 - 0.25
+	var sz: float = float(rect.size.y) * 4.0 - 0.25
+
 	for layer in 2:
-		Forge.box(self, center + Vector3.UP * (1.45 + layer * 2.9), Vector3(rect.size.x * 4 - 0.25, 2.8, rect.size.y * 4 - 0.25), Forge.material(color, 0.5), layer == 0)
-		for z in rect.size.y * 3:
-			for side in [-1, 1]:
-				Forge.box(self, center + Vector3(side * (rect.size.x * 2 - 0.1), 1.5 + layer * 2.9, -rect.size.y * 2 + 0.6 + z * 1.3), Vector3(0.08, 2.5, 0.08), Forge.material(color.darkened(0.35), 0.6))
+		var cy: float = 1.45 + float(layer) * 2.9
+		Forge.box(self, center + Vector3.UP * cy, Vector3(sx, 2.8, sz), Forge.material(color, 0.5), layer == 0)
+		for dx in [-0.5, 0.5]:
+			for dz in [-0.5, 0.5]:
+				Forge.box(self, center + Vector3(dx * sx, cy + 1.25, dz * sz), Vector3(0.22, 0.28, 0.22), corner_steel)
+				Forge.box(self, center + Vector3(dx * sx, cy - 1.25, dz * sz), Vector3(0.22, 0.28, 0.22), corner_steel)
+		for z in int(rect.size.y * 3):
+			for side in [-1.0, 1.0]:
+				Forge.box(self, center + Vector3(side * (float(rect.size.x) * 2.0 - 0.1), cy, -float(rect.size.y) * 2.0 + 0.6 + float(z) * 1.3), Vector3(0.08, 2.5, 0.08), Forge.material(color.darkened(0.35), 0.6))
 		var door := Forge.material(color.darkened(0.35), 0.4, 0, 0.78)
-		for side in [-1, 1]:
-			var x: float = side * rect.size.x * 0.85
-			Forge.box(self, center + Vector3(x, 1.45 + layer * 2.9, rect.size.y * 2 - 0.09), Vector3(rect.size.x * 1.6, 2.48, 0.035), door)
-			Forge.cylinder(self, center + Vector3(x, 1.45 + layer * 2.9, rect.size.y * 2 - 0.04), 0.033, 2.25, Forge.material(Color(0.45, 0.45, 0.38), 0.7, 0, 0.65))
+		for side in [-1.0, 1.0]:
+			var x: float = side * float(rect.size.x) * 0.85
+			Forge.box(self, center + Vector3(x, cy, float(rect.size.y) * 2.0 - 0.09), Vector3(float(rect.size.x) * 1.6, 2.48, 0.035), door)
+			Forge.cylinder(self, center + Vector3(x, cy, float(rect.size.y) * 2.0 - 0.04), 0.033, 2.25, Forge.material(Color(0.45, 0.45, 0.38), 0.7, 0, 0.65))
+
 	_block(rect)
-	Forge.label(self, center + Vector3(0, 1.8, rect.size.y * 2), "CARGO / %02d" % rect.position.y, Color(0.73, 0.83, 0.8), 40).pixel_size = 0.007
+	Forge.label(self, center + Vector3(0.0, 1.8, float(rect.size.y) * 2.0), "HAZMAT // CONT %02d" % rect.position.y, Color(0.85, 0.88, 0.80), 38).pixel_size = 0.008
 
 func _car(cell: Vector2i, burned: bool) -> void:
 	if cell == Vector2i(15, 24):
@@ -822,27 +982,29 @@ func _harbor_detail(crane_material: Material) -> void:
 	var rail := Forge.material(Color(0.40, 0.40, 0.34), 0.5, 0, 0.7)
 	for x in [-36.0, -12.0, 12.0, 36.0]:
 		for z in [-38.0, -24.0, 3.0, 24.0, 42.0]:
-			for side in [-1, 1]:
-				var p := ground_point(Vector3(x + side * 5.3, 0, z))
+			for side in [-1.0, 1.0]:
+				var p := ground_point(Vector3(float(x) + side * 5.3, 0.0, float(z)))
 				Forge.cylinder(self, p + Vector3.UP * 0.28, 0.18, 0.56, rust)
 				Forge.box(self, p + Vector3.UP * 0.57, Vector3(0.65, 0.09, 0.22), rail)
-				var fender := Forge.cylinder(self, p + Vector3(side * 0.55, -0.37, 0), 0.43, 0.19, rubber)
+				var fender := Forge.cylinder(self, p + Vector3(side * 0.55, -0.37, 0.0), 0.43, 0.19, rubber)
 				fender.rotation.z = PI / 2
-	for x in [-32.0, 40.0]:
-		for y in [3.0, 9.0, 15.0]:
-			_beam(Vector3(x - 7, y, -30), Vector3(x + 7, y + 6, -30), 0.19, crane_material)
-			_beam(Vector3(x + 7, y, -30), Vector3(x - 7, y + 6, -30), 0.19, crane_material)
-		Forge.box(self, Vector3(x, 21, -27), Vector3(3.5, 2.6, 3.5), crane_material)
-		Forge.box(self, Vector3(x, 21.3, -25.2), Vector3(2.8, 1.4, 0.08), Forge.material(Color(0.065, 0.13, 0.16), 0.2, 0, 0.35))
+
+	var wall_metal := Forge.material(Color(0.20, 0.23, 0.24), 0.25, 0, 0.85)
+	var roof_metal := Forge.material(Color(0.12, 0.14, 0.15), 0.45, 0, 0.80)
+	var door_mat := Forge.material(Color(0.10, 0.12, 0.13), 0.50, 0, 0.60)
+	var window_glow := Forge.material(Color(0.55, 0.42, 0.20), 0.0, 0.3, 0.6)
 	for x in [-84.0, 70.0, 98.0]:
-		Forge.box(self, Vector3(x, 7, -74), Vector3(23, 14, 32), Forge.material(Color(0.20, 0.23, 0.23), 0.2, 0, 0.87))
-		Forge.box(self, Vector3(x, 14.6, -74), Vector3(25, 1.2, 34), Forge.material(Color(0.12, 0.15, 0.16), 0.45, 0, 0.8))
-	for z in range(-27, 15, 6):
-		for side in [-1, 1]:
-			Forge.cylinder(self, Vector3(-63 + side * 7.2, 4.5, z), 0.045, 1.4, rail)
-			Forge.box(self, Vector3(-63 + side * 7.2, 5.15, z), Vector3(0.06, 0.06, 6), rail)
-	Forge.box(self, Vector3(-70.4, 2.65, -12), Vector3(0.045, 0.27, 39), Forge.material(Color(0.46, 0.23, 0.11), 0.3))
-	Forge.label(self, Vector3(-62.9, 7.8, 16.1), "C I N D E R  /  0 7", Color(0.63, 0.65, 0.56), 48).pixel_size = 0.012
+		Forge.box(self, Vector3(float(x), 7.0, -74.0), Vector3(23.0, 14.0, 32.0), wall_metal)
+		Forge.box(self, Vector3(float(x), 14.6, -74.0), Vector3(25.0, 1.2, 34.0), roof_metal)
+		for d in [-6.0, 6.0]:
+			Forge.box(self, Vector3(float(x) + d, 3.2, -57.8), Vector3(4.8, 6.0, 0.2), door_mat)
+		Forge.box(self, Vector3(float(x), 9.5, -57.8), Vector3(18.0, 1.2, 0.1), window_glow)
+		for v in [-6.0, 0.0, 6.0]:
+			Forge.cylinder(self, Vector3(float(x) + v, 16.0, -74.0), 0.65, 1.8, roof_metal)
+
+	for b in [Vector3(-55.0, -0.3, 55.0), Vector3(55.0, -0.3, 55.0)]:
+		Forge.cylinder(self, b + Vector3.UP * 0.6, 0.45, 1.2, Forge.material(Color(0.85, 0.2, 0.1) if b.x > 0 else Color(0.1, 0.8, 0.3)))
+		Forge.sphere(self, b + Vector3.UP * 1.5, 0.22, Forge.material(Color(1.0, 0.15, 0.1) if b.x > 0 else Color(0.15, 1.0, 0.35), 0, 3.5))
 
 func _lamp(pos: Vector3, color: Color, height: float) -> void:
 	Forge.cylinder(self, pos + Vector3.UP * height * 0.5, 0.07, height, Forge.material(Color(0.14, 0.18, 0.19), 0.7))

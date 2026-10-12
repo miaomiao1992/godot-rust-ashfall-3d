@@ -306,7 +306,7 @@ func show_menu() -> void:
 	_clear_menu()
 	shade.color = Color(0.008, 0.023, 0.03, 0.60)
 	_label("A S H F A L L   /   S U R V I V A L   P R O T O C O L", Vector2(100, 65), 17, CYAN)
-	_label("RUST LAN CO-OP  /  v0.3.2", Vector2(1030, 65), 15, MUTED)
+	_label("RUST LAN CO-OP  /  v0.4.0", Vector2(1030, 65), 15, MUTED)
 	_label("ASHFALL", Vector2(93, 199), 105, WHITE)
 	_label("余 烬 禁 区", Vector2(104, 333), 43, ORANGE)
 	_label("城市已失守。撤离已取消。", Vector2(108, 419), 24, WHITE)
