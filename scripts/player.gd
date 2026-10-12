@@ -1,5 +1,7 @@
 extends CharacterBody3D
 
+const GrenadeModel = preload("res://scripts/grenade_model.gd")
+
 var WEAPONS: Array[Dictionary] = []
 
 var game
@@ -117,7 +119,7 @@ func _unhandled_input(event: InputEvent) -> void:
 	if event.is_action_pressed("flashlight"):
 		flashlight.visible = not flashlight.visible
 	if active_grenade >= 0:
-		if event.is_action_pressed("fire"):
+		if event.is_action_pressed("shoot"):
 			throw_active_grenade(false)
 			return
 		if event.is_action_pressed("aim"):
@@ -255,26 +257,15 @@ func _build_weapon() -> void:
 	for child in rig.get_children():
 		child.free()
 	if active_grenade >= 0:
-		var skin := Forge.material(Color(0.27, 0.19, 0.13))
-		var glove := Forge.material(Color(0.075, 0.09, 0.095))
-		var body_col: Color = [Color(0.24, 0.35, 0.16), Color(0.72, 0.78, 0.85), Color(0.38, 0.44, 0.48)][active_grenade]
-		var body_mat := Forge.material(body_col, 0.25, 0, 0.55)
-		var steel := Forge.material(Color(0.18, 0.20, 0.22), 0.85, 0, 0.35)
-		var pin_mat := Forge.material(Color(0.85, 0.88, 0.92), 0.90, 0, 0.2)
-		var g_root := Node3D.new()
-		g_root.position = Vector3(0.14, -0.10, -0.36)
-		rig.add_child(g_root)
-		var body := Forge.cylinder(g_root, Vector3(0, 0, 0), 0.065, 0.16, body_mat)
-		body.rotation.x = PI / 2
-		var fuze := Forge.cylinder(g_root, Vector3(0, 0.10, 0), 0.028, 0.06, steel)
-		fuze.rotation.x = PI / 2
-		Forge.box(g_root, Vector3(0.045, 0.05, 0), Vector3(0.014, 0.15, 0.035), steel)
-		Forge.box(g_root, Vector3(-0.042, 0.10, 0), Vector3(0.009, 0.04, 0.04), pin_mat)
-		if is_local:
-			Forge.box(g_root, Vector3(0.02, -0.04, 0.04), Vector3(0.13, 0.11, 0.13), glove)
-			Forge.box(g_root, Vector3(0.01, -0.16, 0.12), Vector3(0.13, 0.19, 0.15), skin).rotation.x = -0.45
-			Forge.box(rig, Vector3(-0.14, -0.22, -0.32), Vector3(0.12, 0.11, 0.15), glove)
-			Forge.box(rig, Vector3(-0.18, -0.32, -0.22), Vector3(0.12, 0.19, 0.13), skin).rotation.x = 0.5
+		GrenadeModel.build_first_person_rig(rig, active_grenade)
+		muzzle = Node3D.new()
+		muzzle.position = Vector3(0, -0.05, -0.5)
+		rig.add_child(muzzle)
+		flash = Forge.sphere(muzzle, Vector3.ZERO, 0.01, Forge.material(Color.BLACK))
+		flash.visible = false
+		flash_light = OmniLight3D.new()
+		flash_light.visible = false
+		muzzle.add_child(flash_light)
 		return
 	var steel := Forge.material(Color(0.11, 0.15, 0.17), 0.8)
 	var dark := Forge.material(Color(0.045, 0.055, 0.064), 0.35)
@@ -632,8 +623,10 @@ func _process(delta: float) -> void:
 	flash_timer = maxf(flash_timer - delta, 0)
 	# Always display a newly received shot for at least one rendered frame,
 	# even when a slow frame is longer than the flash's nominal lifetime.
-	flash.visible = flash_pending or flash_timer > 0
-	flash_light.visible = flash.visible
+	if is_instance_valid(flash):
+		flash.visible = flash_pending or flash_timer > 0
+	if is_instance_valid(flash_light):
+		flash_light.visible = is_instance_valid(flash) and flash.visible
 	flash_pending = false
 	recoil = move_toward(recoil, 0, delta * 0.22)
 	trauma = move_toward(trauma, 0, delta * 1.8)

@@ -137,7 +137,8 @@ func _paint() -> void:
 		_text("剩余 %02d:%02d" % [remaining / 60, remaining % 60], Vector2(50, 137), 21, CYAN)
 		_text("你的队伍：" + ("红队" if p.team == 0 else "蓝队"), Vector2(50, 163), 17, ORANGE)
 	else:
-		_text("0%d / %s" % [game.stage_index + 1, game.STAGE_NAMES[game.stage_index]], Vector2(54, 57), 15, MUTED)
+		var stage_title: String = game.STAGE_NAMES[game.stage_index] if game.stage_index >= 0 and game.stage_index < game.STAGE_NAMES.size() else "突击仓库"
+		_text("0%d / %s" % [game.stage_index + 1, stage_title], Vector2(54, 57), 15, MUTED)
 		_text("尸潮 %d / 3" % (posmod(game.wave - 1, 3) + 1), Vector2(54, 91), 28)
 		_text("%02d:%02d" % [int(game.survival_time) / 60, int(game.survival_time) % 60], Vector2(268, 88), 23, CYAN)
 		_text("感染者 %03d  /  来袭 %03d" % [game.alive, game.spawn_left], Vector2(50, 137), 17, ORANGE)

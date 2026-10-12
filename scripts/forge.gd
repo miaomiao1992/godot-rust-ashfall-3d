@@ -41,12 +41,12 @@ static func box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material, soli
 		visual.add_child(body)
 	return visual
 
-static func cylinder(parent: Node3D, pos: Vector3, radius: float, height: float, mat: Material, top: float = -1.0) -> MeshInstance3D:
+static func cylinder(parent: Node3D, pos: Vector3, radius: float, height: float, mat: Material, top: float = -1.0, segments: int = 16) -> MeshInstance3D:
 	var mesh := CylinderMesh.new()
 	mesh.bottom_radius = radius
 	mesh.top_radius = radius if top < 0 else top
 	mesh.height = height
-	mesh.radial_segments = 8
+	mesh.radial_segments = segments
 	var visual := MeshInstance3D.new()
 	visual.mesh = mesh
 	visual.material_override = mat
@@ -54,12 +54,25 @@ static func cylinder(parent: Node3D, pos: Vector3, radius: float, height: float,
 	parent.add_child(visual)
 	return visual
 
-static func sphere(parent: Node3D, pos: Vector3, radius: float, mat: Material) -> MeshInstance3D:
+static func sphere(parent: Node3D, pos: Vector3, radius: float, mat: Material, segments: int = 20, rings: int = 12) -> MeshInstance3D:
 	var mesh := SphereMesh.new()
 	mesh.radius = radius
 	mesh.height = radius * 2.0
-	mesh.radial_segments = 8
-	mesh.rings = 4
+	mesh.radial_segments = segments
+	mesh.rings = rings
+	var visual := MeshInstance3D.new()
+	visual.mesh = mesh
+	visual.material_override = mat
+	visual.position = pos
+	parent.add_child(visual)
+	return visual
+
+static func torus(parent: Node3D, pos: Vector3, inner_r: float, outer_r: float, mat: Material, segments: int = 16) -> MeshInstance3D:
+	var mesh := TorusMesh.new()
+	mesh.inner_radius = inner_r
+	mesh.outer_radius = outer_r
+	mesh.rings = segments
+	mesh.ring_segments = 8
 	var visual := MeshInstance3D.new()
 	visual.mesh = mesh
 	visual.material_override = mat

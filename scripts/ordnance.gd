@@ -1,5 +1,6 @@
 extends RefCounted
 ## Host simulates trajectories and exposure; clients display snapshot replicas.
+const GrenadeModel = preload("res://scripts/grenade_model.gd")
 var game
 var items: Dictionary = {}
 var next_id := 1
@@ -21,23 +22,7 @@ func _visual(kind: int, smoke: bool = false) -> Node3D:
 		var smoke_node := Forge.sphere(game.world, Vector3.ZERO, 4.5, mat)
 		smoke_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		return smoke_node
-	var root := Node3D.new()
-	game.world.add_child(root)
-	var body_col: Color = [Color(0.24, 0.35, 0.16), Color(0.72, 0.78, 0.85), Color(0.38, 0.44, 0.48)][kind]
-	var body_mat := Forge.material(body_col, 0.25, 0, 0.55)
-	var steel_mat := Forge.material(Color(0.18, 0.20, 0.22), 0.85, 0, 0.35)
-	var pin_mat := Forge.material(Color(0.85, 0.88, 0.92), 0.90, 0, 0.2)
-	# Segmented cylindrical grenade canister
-	var body := Forge.cylinder(root, Vector3(0, 0, 0), 0.062, 0.15, body_mat)
-	body.rotation.x = PI / 2
-	# Neck and threaded fuze
-	var fuze := Forge.cylinder(root, Vector3(0, 0.10, 0), 0.026, 0.05, steel_mat)
-	fuze.rotation.x = PI / 2
-	# Curved safety lever
-	Forge.box(root, Vector3(0.042, 0.04, 0), Vector3(0.012, 0.14, 0.03), steel_mat)
-	# Steel pull ring
-	Forge.box(root, Vector3(-0.038, 0.10, 0), Vector3(0.008, 0.035, 0.035), pin_mat)
-	return root
+	return GrenadeModel.build(game.world, kind, false)
 
 func throw_grenade(p, kind: int, yaw: float, pitch: float) -> void:
 	var direction := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, clampf(pitch, -1.5, 1.5)) * Vector3.FORWARD

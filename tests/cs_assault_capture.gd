@@ -42,15 +42,28 @@ func run() -> void:
 	game._update_pvp_celestial(0.0)
 	await capture("res://tests/previews/34-assault-sunset.png")
 
-	# 4. First-person grenade held in hand
+	# 4. First-person grenades held in hand (HE, Flashbang, Smoke)
 	game.pvp_time_of_day = 12.0
 	game._update_pvp_celestial(0.0)
 	pawn.position = Vector3(0.0, 0.1, 0.0)
 	pawn.camera.position = Vector3(0.0, 1.65, 0.0)
 	pawn.camera.rotation = Vector3.ZERO
 	pawn.rig.visible = true
+
+	# HE Grenade
 	pawn.active_grenade = 0
 	pawn._build_weapon()
 	await capture("res://tests/previews/35-grenade-in-hand.png")
+	await capture("res://tests/previews/35-grenade-he.png")
+
+	# Flashbang
+	pawn.active_grenade = 1
+	pawn._build_weapon()
+	await capture("res://tests/previews/36-grenade-flash.png")
+
+	# Smoke Grenade
+	pawn.active_grenade = 2
+	pawn._build_weapon()
+	await capture("res://tests/previews/37-grenade-smoke.png")
 
 	quit(0)
