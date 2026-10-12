@@ -13,6 +13,7 @@ var painter: Control
 var menu: Control
 var shade: ColorRect
 var visor: ColorRect
+var scope_visor: ColorRect
 var font: SystemFont
 var hurt := 0.0
 var clock := 0.0
@@ -34,6 +35,7 @@ var menu_feedback: Label
 var nickname_field: LineEdit
 var address_field: LineEdit
 var room_name_field: LineEdit
+var browser_mode := "coop"
 
 func _ready() -> void:
 	process_mode = Node.PROCESS_MODE_ALWAYS
@@ -55,6 +57,13 @@ func _ready() -> void:
 	shader_material.shader = preload("res://shaders/visor.gdshader")
 	visor.material = shader_material
 	root.add_child(visor)
+	scope_visor = ColorRect.new()
+	scope_visor.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	scope_visor.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var scope_material := ShaderMaterial.new()
+	scope_material.shader = preload("res://shaders/sniper_scope.gdshader")
+	scope_visor.material = scope_material
+	root.add_child(scope_visor)
 	painter = Control.new()
 	painter.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	painter.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -89,6 +98,9 @@ func _process(delta: float) -> void:
 	visor.material.set_shader_parameter("hurt", hurt)
 	visor.material.set_shader_parameter("clock", clock)
 	visor.material.set_shader_parameter("danger", 1.0 - clampf(game.player.hp / 35.0, 0, 1))
+	scope_visor.visible = game.state == "playing" and game.player.scope_active()
+	scope_visor.material.set_shader_parameter("active", 1.0)
+	scope_visor.material.set_shader_parameter("viewport_size", viewport)
 	painter.queue_redraw()
 	room_refresh -= delta
 	if game.state == "menu" and is_instance_valid(room_list) and room_list.is_visible_in_tree() and room_refresh <= 0:
@@ -117,14 +129,19 @@ func _paint() -> void:
 	# Top telemetry rail.
 	_rect(Vector2(36, 32), Vector2(325, 77), DARK)
 	_rect(Vector2(36, 32), Vector2(3, 77), ORANGE)
-	_text("0%d / %s" % [game.stage_index + 1, game.STAGE_NAMES[game.stage_index]], Vector2(54, 57), 15, MUTED)
-	_text("尸潮 %d / 3" % (posmod(game.wave - 1, 3) + 1), Vector2(54, 91), 28)
-	_text("%02d:%02d" % [int(game.survival_time) / 60, int(game.survival_time) % 60], Vector2(268, 88), 23, CYAN)
-	_text("感染者 %03d  /  来袭 %03d" % [game.alive, game.spawn_left], Vector2(50, 137), 17, ORANGE)
-	if game.next_wave > 0:
-		_text("下一尸潮  %.1f s" % game.next_wave, Vector2(50, 162), 18, CYAN)
+	if game.is_pvp():
+		var scores: Array = game.lan.pvp_state.get("scores", [0, 0])
+		var remaining := int(game.lan.pvp_state.get("remaining", 600))
+		_text("仓库交锋 / 50 杀获胜", Vector2(54, 57), 15, MUTED)
+		_text("RED %02d : %02d BLUE" % scores, Vector2(54, 91), 24)
+		_text("剩余 %02d:%02d" % [remaining / 60, remaining % 60], Vector2(50, 137), 21, CYAN)
+		_text("你的队伍：" + ("红队" if p.team == 0 else "蓝队"), Vector2(50, 163), 17, ORANGE)
 	else:
-		_text(game.level.combat_hint, Vector2(50, 163), 13, MUTED)
+		_text("0%d / %s" % [game.stage_index + 1, game.STAGE_NAMES[game.stage_index]], Vector2(54, 57), 15, MUTED)
+		_text("尸潮 %d / 3" % (posmod(game.wave - 1, 3) + 1), Vector2(54, 91), 28)
+		_text("%02d:%02d" % [int(game.survival_time) / 60, int(game.survival_time) % 60], Vector2(268, 88), 23, CYAN)
+		_text("感染者 %03d  /  来袭 %03d" % [game.alive, game.spawn_left], Vector2(50, 137), 17, ORANGE)
+		_text("下一尸潮  %.1f s" % game.next_wave if game.next_wave > 0 else game.level.combat_hint, Vector2(50, 163), 13, MUTED)
 	if game.stage_index == 2:
 		_text("冷却阀 %d / 3  ·  本波需 %d" % [game.objective_count, posmod(game.wave - 1, 3) + 1], Vector2(50, 188), 16, CYAN)
 	# Heading ticks above the reticle.
@@ -149,9 +166,12 @@ func _paint() -> void:
 	_bar(Vector2(54, 834), Vector2(285, 6), p.hp / p.max_hp, Color(0.97, 0.28, 0.19) if p.hp < 35 else CYAN)
 	_text("耐力", Vector2(219, 778), 13, MUTED)
 	_bar(Vector2(256, 768), Vector2(83, 4), p.stamina / 100, ORANGE)
-	_text("LV.%02d" % game.level_number, Vector2(54, 858), 14, CYAN)
-	_bar(Vector2(119, 851), Vector2(155, 4), float(game.xp) / game.xp_needed, CYAN)
-	_text("%d / %d" % [game.xp, game.xp_needed], Vector2(284, 858), 11, MUTED)
+	if game.is_pvp():
+		_text("固定装备 · 全武器解锁", Vector2(54, 858), 14, CYAN)
+	else:
+		_text("LV.%02d" % game.level_number, Vector2(54, 858), 14, CYAN)
+		_bar(Vector2(119, 851), Vector2(155, 4), float(game.xp) / game.xp_needed, CYAN)
+		_text("%d / %d" % [game.xp, game.xp_needed], Vector2(284, 858), 11, MUTED)
 	# Weapon readout.
 	_rect(Vector2(1100, 754), Vector2(304, 112), DARK)
 	_rect(Vector2(1401, 754), Vector2(3, 112), ORANGE)
@@ -163,8 +183,8 @@ func _paint() -> void:
 		_text("换弹中", Vector2(1301, 806), 14, ORANGE)
 	else:
 		_text("R 换弹   /   右键 精确瞄准", Vector2(1120, 858), 12, MUTED)
-	for i in 5:
-		var pos := Vector2(409 + i * 122, 814)
+	for i in p.WEAPONS.size():
+		var pos := Vector2(400 + i * 115, 814)
 		var unlocked: bool = game.level_number >= p.WEAPONS[i].level
 		_rect(pos, Vector2(114, 51), Color(0.055, 0.19, 0.19, 0.92) if i == p.weapon_index else DARK)
 		if i == p.weapon_index:
@@ -173,7 +193,13 @@ func _paint() -> void:
 		_text("已装备" if i == p.weapon_index else "可切换" if unlocked else "LV.%d 解锁" % p.WEAPONS[i].level, pos + Vector2(10, 41), 11, CYAN if i == p.weapon_index else MUTED)
 	_text("WASD 移动  ·  SHIFT 冲刺  ·  SPACE 跳跃  ·  E 操作  ·  ESC 暂停", Vector2(409, 890), 13, MUTED)
 	_text("击杀 %03d  /  爆头 %03d" % [game.kills, game.headshots], Vector2(51, 727), 15, MUTED)
-	if game.is_lan():
+	if game.is_pvp():
+		var f: Dictionary = game.lan.fighters.get(p.peer_id, {})
+		var grenades: Array = f.get("grenades", [0, 0, 0])
+		_text("G 手雷 %d / Q 闪光 %d / C 烟雾 %d" % grenades, Vector2(51, 700), 17, CYAN)
+		_text("击杀 %d / 死亡 %d / 爆头 %d · TAB 比分" % [int(f.get("kills", 0)), int(f.get("deaths", 0)), int(f.get("headshots", 0))], Vector2(51, 727), 15, WHITE)
+		if p.life == "dead": _center("阵亡 · %.1f 秒后重生" % float(f.get("respawn", 0)), 590, 24, ORANGE)
+	elif game.is_lan():
 		_text("LAN 小队 %d / 4  ·  U 强化点 %d" % [game.lan.players.size(), p.upgrade_points], Vector2(51, 700), 16, CYAN)
 		var row := 0
 		for teammate in game.lan.players.values():
@@ -190,7 +216,7 @@ func _paint() -> void:
 					_center("按住 E 救援 " + teammate.player_name, 590, 24, CYAN)
 					_bar(Vector2(570, 610), Vector2(300, 6), teammate.revive_progress / 3, CYAN)
 	# Adaptive crosshair and hit confirm.
-	if game.state == "playing":
+	if game.state == "playing" and not p.scope_active():
 		var center := BASE * 0.5
 		var gap: float = 5 + p.gun_kick * 55 + (1.0 - p.aim) * float(weapon.spread) * 130
 		var cross_color := Color(0.76, 0.88, 0.85, 0.75)
@@ -206,6 +232,7 @@ func _paint() -> void:
 		if hurt > 0.12:
 			var a: float = p.hit_direction - PI / 2
 			painter.draw_arc(center, 78, a - 0.32, a + 0.32, 18, Color(1, 0.19, 0.1, hurt), 4, true)
+	if game.state == "playing" and p.scope_active(): _draw_scope()
 	if banner_timer > 0:
 		var alpha := minf(banner_timer, 1.0)
 		_center(banner_title, 192, 38, WHITE * Color(1, 1, 1, alpha))
@@ -222,6 +249,11 @@ func _paint() -> void:
 	if game.debug_stats:
 		_text("FPS %d  /  SEED %d  /  NODES %d" % [Engine.get_frames_per_second(), game.seed_value, Performance.get_monitor(Performance.OBJECT_NODE_COUNT)], Vector2(40, 200), 15, CYAN)
 		_text("CPU %.1f ms  /  PHYS %.1f ms  /  DRAW %d  /  FX %d" % [Performance.get_monitor(Performance.TIME_PROCESS) * 1000, Performance.get_monitor(Performance.TIME_PHYSICS_PROCESS) * 1000, Performance.get_monitor(Performance.RENDER_TOTAL_DRAW_CALLS_IN_FRAME), game.fx.items.size()], Vector2(40, 222), 15, CYAN)
+	if game.is_pvp():
+		if game.lan.ordnance.smoke_at(p.camera.global_position): _rect(Vector2.ZERO, BASE, Color(0.43, 0.48, 0.5, 0.97))
+		var flash_seconds := float(game.lan.fighters.get(p.peer_id, {}).get("flash", 0))
+		if flash_seconds > 0: _rect(Vector2.ZERO, BASE, Color(1, 1, 1, minf(flash_seconds, 1)))
+		if Input.is_action_pressed("scoreboard") and not menu.visible: _draw_scoreboard()
 
 func _draw_radar() -> void:
 	var pos := Vector2(1272, 36)
@@ -248,6 +280,26 @@ func _draw_radar() -> void:
 	var direction := Vector2(-sin(p.rotation.y), -cos(p.rotation.y))
 	painter.draw_line(player_point, player_point + direction * 9, CYAN, 2)
 	_text("MOTION TRACKER", pos + Vector2(0, 146), 11, CYAN)
+
+func _draw_scope() -> void:
+	var center := BASE * 0.5
+	var ink := Color(0.015, 0.02, 0.02, 0.95)
+	for direction in [Vector2.LEFT, Vector2.RIGHT, Vector2.UP, Vector2.DOWN]:
+		painter.draw_line(center + direction * 3, center + direction * 330, ink, 1)
+		painter.draw_line(center + direction * 150, center + direction * 330, ink, 3)
+		for tick in 6:
+			var point: Vector2 = center + direction * (tick + 1) * 20
+			var tangent := Vector2(-direction.y, direction.x)
+			painter.draw_line(point - tangent * 4, point + tangent * 4, ink, 1)
+	painter.draw_circle(center, 2, Color(0.8, 0.08, 0.05))
+	painter.draw_arc(center, 341, 0, TAU, 96, Color(0.07, 0.10, 0.11), 6, true)
+	var p = game.player
+	_text("SR-96 / %.0f×" % p.scope_zoom, Vector2(535, 663), 17, CYAN)
+	_text("SHIFT 屏息 / 滚轮 4×·8×", Vector2(535, 692), 15, WHITE)
+	_bar(Vector2(535, 708), Vector2(200, 4), p.breath / 4, CYAN if p.holding_breath else MUTED)
+	if hit_timer > 0:
+		for d in [Vector2(1, 1), Vector2(1, -1), Vector2(-1, 1), Vector2(-1, -1)]:
+			painter.draw_line(center + d * 8, center + d * 15, ORANGE if hit_head else WHITE, 2)
 
 func _clear_menu() -> void:
 	for child in menu.get_children():
@@ -306,7 +358,7 @@ func show_menu() -> void:
 	_clear_menu()
 	shade.color = Color(0.008, 0.023, 0.03, 0.60)
 	_label("A S H F A L L   /   S U R V I V A L   P R O T O C O L", Vector2(100, 65), 17, CYAN)
-	_label("RUST LAN CO-OP  /  v0.4.0", Vector2(1030, 65), 15, MUTED)
+	_label("RUST LAN / v0.5.0", Vector2(1030, 65), 15, MUTED)
 	_label("ASHFALL", Vector2(93, 199), 105, WHITE)
 	_label("余 烬 禁 区", Vector2(104, 333), 43, ORANGE)
 	_label("城市已失守。撤离已取消。", Vector2(108, 419), 24, WHITE)
@@ -314,7 +366,8 @@ func show_menu() -> void:
 	_label("3D  /  三大关卡  /  尸潮与 BOSS  /  成长武装", Vector2(108, 564), 16, CYAN)
 	_button("单人生存   →", Vector2(108, 649), Vector2(300, 66), game.start_run, true)
 	_button("局域网合作", Vector2(425, 649), Vector2(230, 66), show_lan_browser)
-	_button("退出", Vector2(675, 649), Vector2(100, 66), func(): get_tree().quit())
+	_button("仓库 PvP", Vector2(675, 649), Vector2(190, 66), show_lan_browser.bind("pvp"))
+	_button("退出", Vector2(675, 729), Vector2(100, 48), func(): get_tree().quit())
 	_panel(Vector2(885, 216), Vector2(440, 470))
 	_label("行动简报", Vector2(916, 245), 27, WHITE)
 	_label("01 / 保持移动", Vector2(916, 307), 20, ORANGE)
@@ -322,11 +375,11 @@ func show_menu() -> void:
 	_label("02 / 击杀成长", Vector2(916, 394), 20, ORANGE)
 	_label("爆头奖励经验；升级时选择生存强化。", Vector2(916, 430), 15, MUTED)
 	_label("03 / 解锁武装", Vector2(916, 481), 20, ORANGE)
-	_label("LV.2 冲锋枪  ·  LV.3 霰弹枪\nLV.5 突击步枪  ·  LV.7 穿透电磁炮", Vector2(916, 517), 16, MUTED)
+	_label("LV.2 冲锋枪  ·  LV.3 霰弹枪\nLV.5 突击步枪  ·  LV.7 穿透电磁炮\nLV.8 狙击枪 / 4×·8× 瞄准镜", Vector2(916, 517), 16, MUTED)
 	_label("04 / 突破三片死地", Vector2(916, 588), 20, ORANGE)
 	_label("断桥高架 → 沉没船坞 → 熔心实验场\n折线悬桥 / 水道码头 / 环形核心大厅", Vector2(916, 624), 15, MUTED)
 	_label("个人纪录  /  尸潮 %02d   ·   击杀 %03d" % [game.best_wave, game.best_kills], Vector2(108, 770), 16, MUTED)
-	_label("WASD 移动  /  鼠标 射击与瞄准  /  1–5、滚轮 切换武器  /  R 换弹", Vector2(108, 831), 15, MUTED)
+	_label("WASD 移动  /  鼠标 射击与瞄准  /  1–6、滚轮 切换武器  /  R 换弹", Vector2(108, 831), 15, MUTED)
 	_label("THREE SECTORS. ONE SURVIVOR.", Vector2(1050, 831), 13, CYAN)
 
 func show_upgrade() -> void:
@@ -441,13 +494,14 @@ func _entry(text: String, pos: Vector2, width: float, hint: String) -> LineEdit:
 	menu.add_child(field)
 	return field
 
-func show_lan_browser() -> void:
+func show_lan_browser(battle_mode: String = "coop") -> void:
+	browser_mode = battle_mode
 	_clear_menu()
 	game.state = "menu"
 	game.lan.net.start_discovery()
 	_label("L A N  /  C O - O P  P R O T O C O L", Vector2(100, 80), 19, CYAN)
-	_label("局域网合作", Vector2(100, 126), 46, WHITE)
-	_label("最多 4 人 · 共享等级 · 个人强化 · 倒地救援 · 支持战斗中加入", Vector2(100, 195), 18, MUTED)
+	_label("仓库交锋 · 团队 PvP" if browser_mode == "pvp" else "局域网合作", Vector2(100, 126), 46, WHITE)
+	_label("1v1 至 5v5 · 50 杀 / 10 分钟 · 5 秒重生 · 手雷 / 闪光 / 烟雾" if browser_mode == "pvp" else "最多 4 人 · 共享等级 · 个人强化 · 倒地救援 · 支持战斗中加入", Vector2(100, 195), 18, MUTED)
 	_panel(Vector2(100, 244), Vector2(800, 445))
 	_label("同一局域网的房间", Vector2(123, 264), 23)
 	room_list = ItemList.new()
@@ -463,7 +517,7 @@ func show_lan_browser() -> void:
 	nickname_field = _entry(game.lan.nickname, Vector2(946, 302), 354, "幸存者昵称")
 	_label("创建新房间", Vector2(946, 371), 22)
 	room_name_field = _entry("余烬小队", Vector2(946, 415), 354, "房间名称")
-	_button("创建房间", Vector2(946, 477), Vector2(354, 50), func(): game.lan.create_room(room_name_field.text, nickname_field.text), true)
+	_button("创建房间", Vector2(946, 477), Vector2(354, 50), func(): game.lan.create_room(room_name_field.text, nickname_field.text, 42042, browser_mode), true)
 	_label("或使用 IP 直接加入", Vector2(946, 552), 18, MUTED)
 	address_field = _entry("127.0.0.1", Vector2(946, 587), 215, "房主 IPv4 地址")
 	_button("直连", Vector2(1177, 587), Vector2(123, 46), func(): game.lan.join_room(address_field.text.strip_edges(), nickname_field.text))
@@ -479,10 +533,10 @@ func _refresh_rooms() -> void:
 	var list = JSON.parse_string(game.lan.net.rooms_json())
 	room_records = list if list is Array else []
 	for room in room_records:
-		var status: String = "战斗中 · %s / 尸潮 %d" % [game.STAGE_NAMES[int(room.stage)], int(room.wave)] if room.playing else "等待开始 · " + game.STAGE_NAMES[clampi(int(room.stage), 0, 2)]
-		room_list.add_item("%s  |  %d/4  |  %s  |  %s" % [room.name, int(room.players), status, room.ip])
+		var status: String = ("PvP 仓库 · 战斗中" if room.playing else "PvP 仓库 · 等待开始") if room.get("mode", "coop") == "pvp" else "战斗中 · %s / 尸潮 %d" % [game.STAGE_NAMES[clampi(int(room.stage), 0, 2)], int(room.wave)] if room.playing else "等待开始 · " + game.STAGE_NAMES[clampi(int(room.stage), 0, 2)]
+		room_list.add_item("%s  |  %d/%d  |  %s  |  %s" % [room.name, int(room.players), int(room.capacity), status, room.ip])
 		var row := room_list.item_count - 1
-		if int(room.players) >= 4 or not room.compatible:
+		if int(room.players) >= int(room.capacity) or not room.compatible:
 			room_list.set_item_disabled(row, true)
 			room_list.set_item_tooltip(row, "房间已满" if room.compatible else "版本不匹配")
 	if index >= 0 and index < room_list.item_count: room_list.select(index)
@@ -491,10 +545,13 @@ func _join_selected() -> void:
 	var selected := room_list.get_selected_items()
 	if selected.is_empty(): return
 	var room: Dictionary = room_records[selected[0]]
-	if int(room.players) < 4 and room.compatible:
+	if int(room.players) < int(room.capacity) and room.compatible:
 		game.lan.join_room(room.ip, nickname_field.text, int(room.port))
 
 func show_lan_lobby() -> void:
+	if game.is_pvp():
+		show_pvp_lobby()
+		return
 	_clear_menu()
 	_label("L A N  /  S Q U A D  R E A D Y", Vector2(470, 153), 20, CYAN)
 	_label(game.lan.room_name, Vector2(465, 205), 43)
@@ -531,3 +588,65 @@ func show_lan_connecting(address: String) -> void:
 	_label(address + "  /  同步关卡、队友与尸潮", Vector2(490, 360), 21, MUTED)
 	_button("取消并返回", Vector2(490, 475), Vector2(470, 62), game.return_to_menu)
 	menu_feedback = _label("", Vector2(490, 580), 18, ORANGE)
+
+func show_pvp_lobby() -> void:
+	_clear_menu()
+	_label("WAREHOUSE / TEAM DEATHMATCH", Vector2(390, 100), 22, CYAN)
+	_label(game.lan.room_name, Vector2(390, 150), 43)
+	_label("1v1 至 5v5 · 无友伤 · 全武器解锁 · 真人加入可替换机器人", Vector2(300, 225), 20, MUTED)
+	var fill := CheckBox.new()
+	fill.name = "LobbyFillBots"
+	fill.text = "缺位补机器人（可单人直接开局）"
+	fill.position = Vector2(390, 250)
+	fill.button_pressed = bool(game.lan.pvp_state.get("fill_bots", true))
+	fill.disabled = not game.lan.host()
+	fill.toggled.connect(game.lan.set_fill_bots)
+	menu.add_child(fill)
+	for team in 2:
+		var x := 240 + team * 500
+		var color := Color(1, 0.25, 0.18) if team == 0 else Color(0.2, 0.55, 1)
+		_panel(Vector2(x, 285), Vector2(460, 330), color)
+		_label("RED / 红队" if team == 0 else "BLUE / 蓝队", Vector2(x + 25, 306), 25, color)
+		var row := 0
+		for f in game.lan.fighters.values():
+			if int(f.team) != team: continue
+			_label(str(f.name) + (" · 你" if int(f.id) == game.lan.local_id() else ""), Vector2(x + 25, 360 + row * 45), 21)
+			row += 1
+		_button("加入红队" if team == 0 else "加入蓝队", Vector2(x, 630), Vector2(460, 48), game.lan.request.bind("team", team))
+	var begin := _button("开始仓库交锋" if game.lan.host() else "等待房主开始", Vector2(390, 705), Vector2(660, 60), game.lan.start_battle, true)
+	begin.disabled = not game.lan.host()
+	_button("离开房间", Vector2(390, 785), Vector2(660, 48), game.return_to_menu)
+	menu_feedback = _label("", Vector2(390, 850), 16, MUTED)
+
+func _draw_scoreboard() -> void:
+	_rect(Vector2(300, 260), Vector2(840, 405), DARK)
+	_center("仓库交锋 / 击杀 · 死亡 · 爆头", 296, 25, CYAN)
+	for team in 2:
+		var x := 330 + team * 420
+		var row := 0
+		_text("红队" if team == 0 else "蓝队", Vector2(x, 335), 23, ORANGE if team == 0 else CYAN)
+		for f in game.lan.fighters.values():
+			if int(f.team) != team: continue
+			_text("%s  %d / %d / %d" % [f.name, int(f.kills), int(f.deaths), int(f.headshots)], Vector2(x, 385 + row * 45), 19)
+			row += 1
+
+func show_pvp_result() -> void:
+	_clear_menu()
+	var winner := int(game.lan.pvp_state.get("winner", 2))
+	_label("MATCH COMPLETE / 仓库交锋", Vector2(460, 120), 23, CYAN)
+	_label("红队获胜" if winner == 0 else "蓝队获胜" if winner == 1 else "双方平局", Vector2(500, 180), 55)
+	var scores: Array = game.lan.pvp_state.get("scores", [0, 0])
+	_label("RED %d : %d BLUE" % scores, Vector2(535, 270), 30, ORANGE)
+	for team in 2:
+		var row := 0
+		for f in game.lan.fighters.values():
+			if int(f.team) != team: continue
+			_label("%s   击杀 %d / 死亡 %d / 爆头 %d" % [f.name, int(f.kills), int(f.deaths), int(f.headshots)], Vector2(240 + team * 500, 355 + row * 48), 19)
+			row += 1
+	var restart := _button("房主再战一局", Vector2(390, 665), Vector2(660, 60), game.lan.start_battle, true)
+	restart.disabled = not game.lan.host()
+	_button("返回主菜单", Vector2(390, 755), Vector2(660, 55), game.return_to_menu)
+
+func add_pvp_kill(data: Dictionary) -> void:
+	kill_feed.push_front({"text": "%s → %s%s" % [data.attacker, data.victim, " 爆头" if data.head else ""], "head": data.head, "time": 4.0})
+	if kill_feed.size() > 5: kill_feed.pop_back()

@@ -1,5 +1,6 @@
 mod coop;
 mod network;
+mod pvp;
 mod rules;
 mod tactics;
 
@@ -24,6 +25,7 @@ pub struct AshfallCore {
     crowd: Vec<Vector3>,
     goals: tactics::SectorGoals,
     coop: coop::Coop,
+    pvp: pvp::Pvp,
     base: Base<RefCounted>,
 }
 
@@ -35,6 +37,7 @@ impl IRefCounted for AshfallCore {
             crowd: Vec::new(),
             goals: tactics::SectorGoals::default(),
             coop: coop::Coop::default(),
+            pvp: pvp::Pvp::default(),
             base,
         }
     }
@@ -48,6 +51,7 @@ impl AshfallCore {
         self.crowd.clear();
         self.goals = tactics::SectorGoals::default();
         self.coop = coop::Coop::default();
+        self.pvp = pvp::Pvp::default();
     }
 
     #[func]
@@ -218,14 +222,34 @@ impl AshfallCore {
     #[func]
     fn coop_register(&mut self, id: i64, name: GString) {
         if let Ok(id) = u32::try_from(id) {
+            if self.pvp.enabled && !self.pvp.register(coop::PeerId(id), name.to_string()) {
+                return;
+            }
+            if self.pvp.enabled {
+                self.coop
+                    .players
+                    .retain(|id, _| self.pvp.fighters.contains_key(id));
+            }
             self.coop
                 .register(coop::PeerId(id), name.to_string(), self.run.level);
+            if self.pvp.enabled
+                && let Some(p) = self.coop.players.get_mut(&coop::PeerId(id))
+            {
+                p.points = 0;
+            }
+            if self.pvp.started {
+                self.pvp.refill_bots(&mut self.coop);
+            }
         }
     }
     #[func]
     fn coop_remove(&mut self, id: i64) {
         if let Ok(id) = u32::try_from(id) {
             self.coop.remove(coop::PeerId(id));
+            self.pvp.fighters.remove(&coop::PeerId(id));
+            if self.pvp.started {
+                self.pvp.refill_bots(&mut self.coop);
+            }
         }
     }
     #[func]
@@ -248,7 +272,16 @@ impl AshfallCore {
     }
     #[func]
     fn coop_tick(&mut self, dt: f32) {
-        self.coop.tick(dt);
+        if self.pvp.enabled {
+            if dt.is_finite() && dt > 0.0 {
+                for player in self.coop.players.values_mut() {
+                    player.tick(dt);
+                }
+            }
+            self.pvp.tick(&mut self.coop, dt);
+        } else {
+            self.coop.tick(dt);
+        }
     }
     #[func]
     fn coop_velocity(
@@ -331,7 +364,7 @@ impl AshfallCore {
         let Some(w) = rules::WEAPONS.get(index) else {
             return false;
         };
-        if self.run.level < w.level {
+        if !self.pvp.enabled && self.run.level < w.level {
             return false;
         }
         let Some(p) = self.coop.players.get_mut(&coop::PeerId(id)) else {
@@ -356,6 +389,9 @@ impl AshfallCore {
     }
     #[func]
     fn coop_upgrade(&mut self, id: i64, index: i32) -> bool {
+        if self.pvp.enabled {
+            return false;
+        }
         let Ok(id) = u32::try_from(id) else {
             return false;
         };
@@ -403,6 +439,106 @@ impl AshfallCore {
         {
             p.hp = (p.hp + amount).min(p.max_hp);
         }
+    }
+
+    #[func]
+    fn pvp_configure(&mut self) {
+        self.reset_run();
+        self.pvp.enabled = true;
+        self.pvp.fill_bots = true;
+        self.pvp.winner = -1;
+        self.coop.capacity = 10;
+    }
+    #[func]
+    fn penetration_limit(&self, weapon: i32, surface: GString) -> f32 {
+        usize::try_from(weapon).map_or(0.0, |w| rules::penetration_limit(w, &surface.to_string()))
+    }
+    #[func]
+    fn penetration_factor(&self, weapon: i32, surface: GString, thickness: f32) -> f32 {
+        usize::try_from(weapon).map_or(0.0, |w| {
+            rules::penetration_factor(w, &surface.to_string(), thickness)
+        })
+    }
+    #[func]
+    fn blast_cover_limit(&self, surface: GString) -> f32 {
+        rules::blast_cover_limit(&surface.to_string())
+    }
+    #[func]
+    fn blast_cover_factor(&self, surface: GString, thickness: f32) -> f32 {
+        rules::blast_cover_factor(&surface.to_string(), thickness)
+    }
+    #[func]
+    fn pvp_start(&mut self) {
+        self.pvp.refill_bots(&mut self.coop);
+        self.pvp.start(&mut self.coop);
+    }
+    #[func]
+    fn pvp_set_fill_bots(&mut self, enabled: bool) {
+        if !self.pvp.started {
+            self.pvp.fill_bots = enabled;
+        }
+    }
+    #[func]
+    fn pvp_fill_bots(&mut self) {
+        self.pvp.refill_bots(&mut self.coop);
+    }
+    #[func]
+    fn pvp_team(&mut self, id: i64, team: i32) -> bool {
+        let (Ok(id), Ok(team)) = (u32::try_from(id), usize::try_from(team)) else {
+            return false;
+        };
+        self.pvp.choose_team(coop::PeerId(id), team)
+    }
+    #[func]
+    fn pvp_json(&self) -> GString {
+        serde_json::to_string(&self.pvp)
+            .unwrap_or_default()
+            .as_str()
+            .into()
+    }
+    #[func]
+    fn pvp_throw(&mut self, id: i64, kind: i32, seq: i64) -> bool {
+        let (Ok(id), Ok(kind), Ok(seq)) =
+            (u32::try_from(id), usize::try_from(kind), u64::try_from(seq))
+        else {
+            return false;
+        };
+        let peer = coop::PeerId(id);
+        if !self.pvp.throw(&self.coop, peer, kind, seq) {
+            return false;
+        }
+        if let Some(p) = self.coop.players.get_mut(&peer) {
+            p.last_action = seq;
+        }
+        true
+    }
+    #[func]
+    fn pvp_flash(&mut self, id: i64, seconds: f32) {
+        if seconds.is_finite()
+            && seconds > 0.0
+            && let Ok(id) = u32::try_from(id)
+            && let Some(f) = self.pvp.fighters.get_mut(&coop::PeerId(id))
+        {
+            f.flash = f.flash.max(seconds.min(4.0));
+        }
+    }
+    #[func]
+    fn pvp_hit(&mut self, attacker: i64, victim: i64, amount: f32, head: bool) -> VarDictionary {
+        let mut d = VarDictionary::new();
+        let result = match (u32::try_from(attacker), u32::try_from(victim)) {
+            (Ok(a), Ok(v)) => self.pvp.hit(
+                &mut self.coop,
+                coop::PeerId(a),
+                coop::PeerId(v),
+                amount,
+                head,
+            ),
+            _ => (false, false),
+        };
+        d.set("hit", result.0);
+        d.set("killed", result.1);
+        d.set("head", head && result.0);
+        d
     }
 
     #[func]

@@ -34,7 +34,7 @@ func verify() -> void:
 	game.state = "testing"
 	await physics_frame
 	await physics_frame
-	assert(game.player.WEAPONS.size() == 5 and game.level.stage == 0)
+	assert(game.player.WEAPONS.size() == 6 and game.level.stage == 0)
 	game._change_stage(1)
 	game._change_stage(2)
 	await process_frame
@@ -64,5 +64,19 @@ func verify() -> void:
 		assert(game.fx.items.back().node.scale.z < 1.201)
 		print("PACK VERIFIED: selected starting map and short ordinary bullet tracer")
 		game.lan.leave()
+		game.return_to_menu()
+		game.lan.create_room("导出 PvP 检查", "房主", 42672, "pvp")
+		assert(game.hud.menu.find_child("LobbyFillBots", true, false).button_pressed)
+		game.lan.start_battle()
+		assert(game.state == "playing" and game.stage_index == 3)
+		assert(game.lan.fighters.size() == 2 and game.battle.props.size() == 20)
+		assert(game.level.pipe_routes.size() == 4 and game.level.roof_routes.size() == 2)
+		game.core.coop_switch(1, 5)
+		game.lan.sync_stats()
+		assert(game.player.weapon_index == 5 and game.player.magazines.size() == 6)
+		game.battle.make_mark(Vector3(0, 0, 20), Vector3.UP, 3, 4, 100)
+		assert(game.battle.marks.size() == 1)
+		print("PACK VERIFIED: warehouse, optional bot, scoped sniper, physical props and impact shader")
+		game.return_to_menu()
 	print("PACK VALIDATION COMPLETE (macOS host / Windows PCK; Windows DLL checked separately)")
 	quit()

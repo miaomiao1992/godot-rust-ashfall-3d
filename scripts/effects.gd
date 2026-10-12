@@ -50,6 +50,43 @@ func casing(pos: Vector3, right: Vector3) -> void:
 	visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	items.append({"node": visual, "vel": right * rng.randf_range(1.5, 3.0) + Vector3.UP * 2.2, "life": 1.5, "gravity": 9.0})
 
+func puff(pos: Vector3, direction: Vector3, color: Color, size: float, life: float) -> void:
+	if items.size() >= MAX_DEBRIS: return
+	var node := MeshInstance3D.new()
+	var quad := QuadMesh.new()
+	quad.size = Vector2.ONE
+	node.mesh = quad
+	var mat := ShaderMaterial.new()
+	mat.shader = preload("res://shaders/dust_puff.gdshader")
+	mat.set_shader_parameter("tint", Color(color.r, color.g, color.b, 0.6))
+	node.material_override = mat
+	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(node)
+	node.position = pos
+	node.scale = Vector3.ONE * size
+	items.append({"node": node, "vel": direction * 0.7 + Vector3.UP * 0.4, "life": life, "total": life, "gravity": 0.0, "puff": true, "size": size})
+
+func explosion(pos: Vector3) -> void:
+	burst(pos, Vector3.UP, Color(0.31, 0.25, 0.18), 24, 9)
+	for i in 10:
+		var direction := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.15, 1), rng.randf_range(-1, 1)).normalized()
+		puff(pos + direction * 0.3, direction * 3, Color(0.19, 0.17, 0.14), rng.randf_range(0.8, 1.5), rng.randf_range(1.8, 3.4))
+	var glow := Forge.sphere(self, pos, 0.7, Forge.material(Color(1, 0.53, 0.14), 0, 4))
+	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	items.append({"node": glow, "vel": Vector3.ZERO, "life": 0.12, "gravity": 0.0, "fresh": true})
+	var light := OmniLight3D.new()
+	light.position = pos
+	light.light_color = Color(1, 0.55, 0.22)
+	light.light_energy = 5
+	light.omni_range = 13
+	add_child(light)
+	items.append({"node": light, "vel": Vector3.ZERO, "life": 0.16, "gravity": 0.0, "fresh": true})
+	if is_instance_valid(game.player):
+		var distance: float = game.player.camera.global_position.distance_to(pos)
+		if distance < 22:
+			var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(pos, game.player.camera.global_position, 1))
+			game.player.trauma = maxf(game.player.trauma, (1 - distance / 22) * (0.9 if hit.is_empty() else 0.25))
+
 func corpse(pos: Vector3, color: Color, scale_factor: float, direction: Vector3) -> void:
 	var body := Node3D.new()
 	add_child(body)
@@ -150,16 +187,28 @@ func _process(delta: float) -> void:
 		if item.get("blood", false):
 			item.node.material_override.set_shader_parameter("spread", clampf((15.0 - item.life) / 0.85, 0.1, 1.0))
 			continue
+		if item.get("puff", false):
+			var progress: float = 1 - item.life / item.total
+			item.node.scale = Vector3.ONE * item.size * (1 + progress * 2.2)
+			item.node.material_override.set_shader_parameter("opacity", (1 - progress) * minf(progress * 8, 1))
 		if item.get("trail", false):
 			item.travelled = minf(item.travelled + 600 * delta, item.distance)
 			var length := minf(1.2, item.travelled)
 			item.node.position = item.start + item.direction * (item.travelled - length * 0.5)
 			continue
 		item.vel.y -= item.gravity * delta
-		item.node.position += item.vel * delta
+		var end: Vector3 = item.node.position + item.vel * delta
+		if item.gravity > 0:
+			var query := PhysicsRayQueryParameters3D.create(item.node.global_position, to_global(end), 1)
+			var hit := get_world_3d().direct_space_state.intersect_ray(query)
+			if not hit.is_empty():
+				if hit.normal.length_squared() < 0.5:
+					item.node.queue_free()
+					items.remove_at(i)
+					continue
+				end = to_local(hit.position + hit.normal * 0.018)
+				item.vel = item.vel.bounce(hit.normal) * 0.28
+				if item.vel.length() < 0.4: item.gravity = 0; item.vel = Vector3.ZERO
+		item.node.position = end
 		if item.gravity > 0:
 			item.node.rotation += Vector3(3, 5, 2) * delta
-			if item.node.position.y < 0.04:
-				item.node.position.y = 0.04
-				item.vel *= 0.35
-				item.vel.y = absf(item.vel.y)

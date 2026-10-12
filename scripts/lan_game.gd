@@ -26,12 +26,21 @@ var target_frame := -1
 var target_ids := PackedInt64Array()
 var target_positions: Array[Vector3] = []
 var start_stage := 0
+var mode := "coop"
+var pvp_state: Dictionary = {}
+var fighters: Dictionary = {}
+var generations: Dictionary = {}
+var ordnance
+var bots
+var rules_clock_ms := 0
 
 func _init(owner) -> void:
 	game = owner
 	net = ClassDB.instantiate("LanSession")
 	net.name = "LanSession"
 	game.add_child(net)
+	ordnance = preload("res://scripts/ordnance.gd").new(game)
+	bots = preload("res://scripts/pvp_bots.gd").new(game)
 
 func host() -> bool:
 	return enabled and net.role() == "host"
@@ -44,12 +53,19 @@ func refresh_members() -> void:
 	if data is Array:
 		members = data
 
-func create_room(name: String, nick: String, port: int = 42042) -> void:
+func create_room(name: String, nick: String, port: int = 42042, battle_mode: String = "coop") -> void:
 	var error: String = net.host_room(name, nick, port)
 	if not error.is_empty():
 		game.hud.toast(error, Color(1, 0.4, 0.2), 5)
 		return
 	enabled = true
+	mode = battle_mode
+	game.core.reset_run()
+	if mode == "pvp":
+		net.configure_pvp_room()
+		game.core.pvp_configure()
+		game.core.coop_register(1, nick)
+		refresh_pvp()
 	start_stage = 0
 	nickname = nick
 	room_name = name
@@ -79,6 +95,12 @@ func leave() -> void:
 	replicas.clear()
 	zones.clear()
 	network_pickups.clear()
+	mode = "coop"
+	pvp_state.clear()
+	fighters.clear()
+	generations.clear()
+	ordnance.clear()
+	bots.clear()
 
 func world_ready(local_player) -> void:
 	target_frame = -1
@@ -86,6 +108,9 @@ func world_ready(local_player) -> void:
 	replicas.clear()
 	zones.clear()
 	network_pickups.clear()
+	generations.clear()
+	ordnance.clear()
+	bots.clear()
 	players[local_id()] = local_player
 	local_player.peer_id = local_id()
 	local_player.player_name = nickname
@@ -99,6 +124,11 @@ func world_ready(local_player) -> void:
 			spawn_player(id, member.name)
 	if host():
 		sync_stats()
+	if game.is_pvp():
+		for f in fighters.values():
+			if f.get("is_bot", false): spawn_player(int(f.id), str(f.name))
+		if host(): sync_stats()
+		for id in players: place_pvp_player(id)
 
 func spawn_player(id: int, name: String) -> void:
 	if players.has(id):
@@ -111,17 +141,30 @@ func spawn_player(id: int, name: String) -> void:
 	p.position = game.level.safe_ground(game.level.player_spawn + Vector3((id % 3 - 1) * 2.0, 0, -3)) + Vector3.UP * 0.15
 	game.world.add_child(p)
 	players[id] = p
+	if game.is_pvp(): place_pvp_player(id)
 
 func start_battle() -> void:
 	if not host():
 		return
 	refresh_members()
-	epoch += 1
-	ready_peers.clear()
-	game.start_run(start_stage)
+	if mode == "pvp":
+		game.core.pvp_fill_bots()
+		refresh_pvp()
+		var counts := [0, 0]
+		for f in fighters.values(): counts[int(f.team)] += 1
+		if counts[0] == 0 or counts[0] != counts[1]:
+			game.hud.toast("双方人数需相等；可勾选「缺位补机器人」以单人开局", Color(1, 0.6, 0.2), 4)
+			return
+		epoch += 1
+		ready_peers.clear()
+		game.start_pvp()
+	else:
+		epoch += 1
+		ready_peers.clear()
+		game.start_run(start_stage)
 
 func set_start_stage(index: int) -> void:
-	if not host() or game.state != "lobby": return
+	if not host() or game.state != "lobby" or mode == "pvp": return
 	start_stage = clampi(index, 0, game.STAGE_NAMES.size() - 1)
 	net.send_event("lobby_map", JSON.stringify({"stage": start_stage}))
 	net.update_room(start_stage, 0, false)
@@ -132,7 +175,9 @@ func process(delta: float) -> void:
 		match event.kind:
 			"joined":
 				refresh_members()
-				if data is Dictionary: room_name = str(data.get("name", room_name))
+				if data is Dictionary:
+					room_name = str(data.get("name", room_name))
+					mode = str(data.get("mode", "coop"))
 				if client_epoch < 0:
 					game.state = "lobby"
 					game.hud.show_lan_lobby()
@@ -141,7 +186,10 @@ func process(delta: float) -> void:
 				refresh_members()
 				if host():
 					game.core.coop_register(int(event.peer), str(data.name))
-					if game.state in ["playing", "team_wipe", "victory"]:
+					if mode == "pvp":
+						refresh_pvp()
+						net.send_event("lobby_pvp", JSON.stringify(pvp_state))
+					if game.state in ["playing", "team_wipe", "victory", "pvp_finished"]:
 						game.core.coop_loading(int(event.peer))
 						spawn_player(int(event.peer), data.name)
 						game.hud.toast(data.name + " 加入小队", Color(0.3, 0.9, 0.8), 3)
@@ -156,6 +204,9 @@ func process(delta: float) -> void:
 				inputs.erase(id)
 				stats.erase(id)
 				refresh_members()
+				if host() and mode == "pvp":
+					refresh_pvp()
+					net.send_event("lobby_pvp", JSON.stringify(pvp_state))
 				if game.state == "lobby": game.hud.show_lan_lobby()
 			"roster":
 				refresh_members()
@@ -184,6 +235,15 @@ func process(delta: float) -> void:
 					game.hud.hurt = 1
 					game.player.trauma = 1
 					game.sound.play("hurt", -4)
+			"lobby_pvp":
+				if not host() and data is Dictionary:
+					mode = "pvp"
+					apply_pvp(data)
+					if game.state == "lobby": game.hud.show_lan_lobby()
+			"detonate":
+				if not host() and data is Dictionary: ordnance.show_detonation(data)
+			"pvp_kill":
+				if not host() and data is Dictionary: game.hud.add_pvp_kill(data)
 			"room_closed", "disconnected", "error":
 				var text: String = event.data if event.kind in ["error", "disconnected"] else "房主已关闭房间"
 				leave()
@@ -193,21 +253,38 @@ func process(delta: float) -> void:
 		return
 	if host():
 		if game.state == "playing":
-			game.core.coop_tick(delta)
-			update_revives(delta)
-			if game.core.coop_wipe():
+			var rules_delta := delta
+			if mode == "pvp":
+				var now := Time.get_ticks_msec()
+				if rules_clock_ms > 0: rules_delta = float(now - rules_clock_ms) / 1000.0
+				rules_clock_ms = now
+			game.core.coop_tick(rules_delta)
+			if mode == "pvp":
+				refresh_pvp()
+				for id in players:
+					var f: Dictionary = fighters.get(id, {})
+					if not f.is_empty() and int(generations.get(id, -1)) != int(f.generation): place_pvp_player(id)
+				bots.process(delta)
+				ordnance.process(rules_delta)
+				if int(pvp_state.get("winner", -1)) != -1:
+					game.state = "pvp_finished"
+					Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+					game.hud.show_pvp_result()
+			else: update_revives(delta)
+			if mode != "pvp" and game.core.coop_wipe():
 				sync_stats()
 				game.state = "team_wipe"
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 				game.hud.show_death()
-		if game.state in ["playing", "team_wipe", "victory"]:
+		if game.state in ["playing", "team_wipe", "victory", "pvp_finished"]:
 			snapshot_timer -= delta
 			if snapshot_timer <= 0:
 				snapshot_timer = 0.05
 				sync_stats()
 				net.send_snapshot(JSON.stringify(make_snapshot()), 0)
-		net.update_room(start_stage if game.state == "lobby" else game.stage_index, 0 if game.state == "lobby" else game.wave, game.state == "playing")
+		net.update_room(3 if mode == "pvp" else start_stage if game.state == "lobby" else game.stage_index, 0 if game.state == "lobby" else game.wave, game.state == "playing")
 	else:
+		if mode == "pvp": ordnance.process_visuals(delta)
 		for id in players:
 			if id != local_id():
 				var p = players[id]
@@ -224,6 +301,7 @@ func process(delta: float) -> void:
 			h.material.set_shader_parameter("fade", clampf(1 + h.life / 0.55, 0, 1))
 
 func sync_stats() -> void:
+	if mode == "pvp": refresh_pvp()
 	var list = JSON.parse_string(game.core.coop_players_json())
 	if not list is Array:
 		return
@@ -234,6 +312,7 @@ func sync_stats() -> void:
 		if players.has(id): players[id].apply_coop_stats(s)
 
 func get_input(id: int) -> Dictionary:
+	if mode == "pvp" and fighters.get(id, {}).get("is_bot", false): return bots.input_for(id)
 	var data: Dictionary = inputs.get(id, {})
 	if Time.get_ticks_msec() - int(data.get("received", 0)) > 400:
 		return {"x": 0.0, "z": 0.0, "yaw": players[id].rotation.y if players.has(id) else 0.0, "pitch": 0.0, "buttons": 0}
@@ -254,14 +333,21 @@ func request(kind: String, arg: int = 0, yaw: float = 0.0, pitch: float = 0.0) -
 		net.send_action(kind, arg, action_sequence, yaw, pitch)
 
 func apply_action(id: int, action: Dictionary) -> void:
+	if action.kind == "team":
+		if mode == "pvp" and game.state == "lobby" and game.core.pvp_team(id, int(action.arg)):
+			refresh_pvp()
+			net.send_event("lobby_pvp", JSON.stringify(pvp_state))
+			game.hud.show_lan_lobby()
+		return
 	if action.kind == "ready":
 		if game.state == "lobby":
 			net.send_event("lobby_map", JSON.stringify({"stage": start_stage}))
+			if mode == "pvp": net.send_event("lobby_pvp", JSON.stringify(pvp_state))
 		if int(action.arg) == 1:
 			ready_peers[id] = true
 			game.core.coop_activate(id)
 			sync_stats()
-		if game.state in ["playing", "team_wipe", "victory"]:
+		if game.state in ["playing", "team_wipe", "victory", "pvp_finished"]:
 			net.send_snapshot(JSON.stringify(make_snapshot()), id)
 		return
 	if action.kind == "restart":
@@ -271,12 +357,18 @@ func apply_action(id: int, action: Dictionary) -> void:
 		return
 	var p = players[id]
 	match action.kind:
+		"grenade":
+			if mode == "pvp" and game.core.pvp_throw(id, int(action.arg), int(action.seq)):
+				ordnance.throw_grenade(p, int(action.arg), float(action.yaw), float(action.pitch))
 		"fire":
+			var saved_sway: Vector2 = p.scope_sway
+			p.scope_sway = Vector2.ZERO
 			p.rotation.y = action.yaw
 			p.camera.rotation.x = clampf(action.pitch, -1.5, 1.5)
 			p.aim_pitch = p.camera.rotation.x + p.recoil
 			p._update_weapon_pose()
 			p.fire(int(action.seq))
+			p.scope_sway = saved_sway
 		"reload":
 			game.core.coop_reload(id)
 		"switch":
@@ -334,11 +426,13 @@ func make_snapshot() -> Dictionary:
 	for item in game.pickups: pickups.append({"id": item.nid, "pos": vec(item.node.position), "kind": item.kind})
 	var valves: Array = []
 	for terminal in game.level.terminals: valves.append(terminal.activated)
-	return {"epoch": epoch, "tick": snapshot_tick, "start_stage": start_stage, "stage": game.stage_index, "wave": game.wave, "state": game.state, "time": game.survival_time, "spawn_left": game.spawn_left, "alive": game.alive, "next_wave": game.next_wave, "level": game.level_number, "xp": game.xp, "xp_needed": game.xp_needed, "kills": game.kills, "headshots": game.headshots, "objective": game.objective_count, "valves": valves, "players": pawn_states, "enemies": enemies, "hazards": hazards, "pickups": pickups}
+	return {"epoch": epoch, "tick": snapshot_tick, "mode": mode, "pvp": pvp_state, "battle": game.battle.snapshot(), "ordnance": ordnance.snapshot(), "start_stage": start_stage, "stage": game.stage_index, "wave": game.wave, "state": game.state, "time": game.survival_time, "spawn_left": game.spawn_left, "alive": game.alive, "next_wave": game.next_wave, "level": game.level_number, "xp": game.xp, "xp_needed": game.xp_needed, "kills": game.kills, "headshots": game.headshots, "objective": game.objective_count, "valves": valves, "players": pawn_states, "enemies": enemies, "hazards": hazards, "pickups": pickups}
 
 func apply_snapshot(s: Dictionary) -> void:
 	if int(s.tick) <= last_tick and int(s.epoch) == client_epoch: return
 	last_tick = int(s.tick)
+	mode = str(s.get("mode", "coop"))
+	if mode == "pvp": apply_pvp(s.get("pvp", {}))
 	start_stage = clampi(int(s.get("start_stage", 0)), 0, game.STAGE_NAMES.size() - 1)
 	var rebuild: bool = client_epoch != int(s.epoch) or game.stage_index != int(s.stage)
 	if rebuild:
@@ -366,6 +460,8 @@ func apply_snapshot(s: Dictionary) -> void:
 		present[id] = true
 		if not players.has(id): spawn_player(id, data.name)
 		var p = players[id]
+		var respawned: bool = mode == "pvp" and int(generations.get(id, -1)) != int(fighters.get(id, {}).get("generation", 0))
+		if respawned: place_pvp_player(id)
 		p.network_position = unvec(data.pos)
 		p.network_yaw = data.yaw
 		if id != local_id(): p.aim_pitch = float(data.pitch)
@@ -373,7 +469,7 @@ func apply_snapshot(s: Dictionary) -> void:
 		stats[id] = data.stats
 		p.apply_coop_stats(data.stats)
 		if id == local_id():
-			if rebuild or p.position.distance_to(p.network_position) > 1.5: p.position = p.network_position
+			if rebuild or respawned or p.position.distance_to(p.network_position) > 1.5: p.position = p.network_position
 			else: p.position = p.position.lerp(p.network_position, 0.18)
 	for id in players.keys():
 		if not present.has(id): players[id].queue_free(); players.erase(id)
@@ -436,18 +532,22 @@ func apply_snapshot(s: Dictionary) -> void:
 			game.pickups.erase(item)
 			network_pickups.erase(id)
 	var old_state: String = game.state
+	game.battle.apply_snapshot(s.get("battle", {}))
+	if mode == "pvp": ordnance.apply_snapshot(s.get("ordnance", []))
 	game.state = s.state
 	if game.state != old_state:
 		if game.state == "team_wipe": game.hud.show_death(); Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		elif game.state == "victory": game.hud.show_victory(); Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+		elif game.state == "pvp_finished": game.hud.show_pvp_result(); Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		elif game.state == "playing": game.hud.hide_overlay(); Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 	if rebuild: request("ready", 1)
 
-func shot_event(p, traces: Array, head: bool, killed: bool, hit: bool) -> void:
-	var data := {"owner": p.peer_id, "weapon": p.weapon_index, "pos": vec(p.muzzle.global_position), "traces": traces, "head": head, "killed": killed, "hit": hit}
+func shot_event(p, traces: Array, head: bool, killed: bool, hit: bool, impacts: Array = []) -> void:
+	var data := {"owner": p.peer_id, "weapon": p.weapon_index, "pos": vec(p.muzzle.global_position), "traces": traces, "impacts": impacts, "head": head, "killed": killed, "hit": hit}
 	net.send_event("shot", JSON.stringify(data))
 
 func show_shot(data: Dictionary) -> void:
+	for impact in data.get("impacts", []): game.battle.show_impact(impact)
 	if int(data.owner) == local_id():
 		if data.head or data.killed or not data.traces.is_empty():
 			# traces include the authoritative per-shot hit flag as the final element.
@@ -474,3 +574,64 @@ static func vec(v: Vector3) -> Array:
 
 static func unvec(v: Array) -> Vector3:
 	return Vector3(v[0], v[1], v[2])
+
+func refresh_pvp() -> void:
+	var data = JSON.parse_string(game.core.pvp_json())
+	if data is Dictionary: apply_pvp(data)
+	if host() and game.state in ["playing", "pvp_finished"]:
+		for id in players.keys():
+			if id >= 4000000000 and not fighters.has(id):
+				players[id].queue_free()
+				players.erase(id)
+				bots.brains.erase(id)
+		for f in fighters.values():
+			if f.get("is_bot", false) and not players.has(int(f.id)): spawn_player(int(f.id), str(f.name))
+
+func set_fill_bots(value: bool) -> void:
+	if not host() or game.state != "lobby": return
+	game.core.pvp_set_fill_bots(value)
+	refresh_pvp()
+	net.send_event("lobby_pvp", JSON.stringify(pvp_state))
+
+func apply_pvp(data: Dictionary) -> void:
+	pvp_state = data
+	fighters.clear()
+	for key in data.get("fighters", {}):
+		fighters[int(key)] = data.fighters[key]
+	for id in players:
+		players[id].set_team(int(fighters.get(id, {}).get("team", 0)))
+
+func place_pvp_player(id: int) -> void:
+	if not players.has(id) or not fighters.has(id): return
+	var f: Dictionary = fighters[id]
+	var ids: Array = []
+	for key in fighters:
+		if int(fighters[key].team) == int(f.team): ids.append(key)
+	ids.sort()
+	var p = players[id]
+	p.position = game.level.spawn_for(int(f.team), ids.find(id))
+	p.network_position = p.position
+	p.velocity = Vector3.ZERO
+	p.rotation.y = 0 if int(f.team) == 0 else PI
+	p.network_yaw = p.rotation.y
+	p.aim_pitch = 0
+	p.camera.position = Vector3(0, 1.65, 0)
+	p.camera.rotation = Vector3.ZERO
+	p.recoil = 0
+	p.set_team(int(f.team))
+	generations[id] = int(f.generation)
+
+func hit_player(attacker: int, victim: int, damage: float, head: bool) -> Dictionary:
+	var result: Dictionary = game.core.pvp_hit(attacker, victim, damage, head)
+	if not result.hit: return result
+	if players.has(victim) and players[victim].is_local:
+		game.hud.hurt = 1
+		players[victim].trauma = 1
+		game.sound.play("hurt", -4)
+	net.send_event("hurt", JSON.stringify({"id": victim}))
+	if result.killed:
+		var data := {"attacker": fighters.get(attacker, {}).get("name", "?"), "victim": fighters.get(victim, {}).get("name", "?"), "head": head}
+		game.hud.add_pvp_kill(data)
+		net.send_event("pvp_kill", JSON.stringify(data))
+	sync_stats()
+	return result

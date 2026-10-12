@@ -30,6 +30,9 @@ static func box(parent: Node3D, pos: Vector3, size: Vector3, mat: Material, soli
 		var body := StaticBody3D.new()
 		body.collision_layer = 1
 		body.collision_mask = 0
+		if mat is StandardMaterial3D:
+			var color: Color = mat.albedo_color
+			body.set_meta("surface", "metal" if mat.metallic > 0.35 else "wood" if color.r > color.b * 1.7 and color.r > color.g * 1.25 else "concrete")
 		var shape := BoxShape3D.new()
 		shape.size = size
 		var collision := CollisionShape3D.new()

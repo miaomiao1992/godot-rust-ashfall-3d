@@ -32,7 +32,7 @@ func run() -> void:
 	game.start_run()
 	game.state = "testing"
 	check(game.wave == 1 and game.spawn_left == 34, "campaign starts in sector 1")
-	check(game.player.WEAPONS.size() == 5, "five weapons supplied by Rust")
+	check(game.player.WEAPONS.size() == 6, "six weapons supplied by Rust")
 	game.player.switch_weapon(4)
 	check(game.player.weapon_index == 0, "growth-locked weapon cannot be equipped")
 	# Verify the raycast really hits a 3D physics body.
@@ -53,13 +53,13 @@ func run() -> void:
 	game.state = "testing"
 	check(game.player.magazines[0] == 15, "reload completes and refills pistol")
 	# Award legitimate enemy rewards through the native progression path.
-	while game.level_number < 7:
+	while game.level_number < 8:
 		var victim = game._spawn_add(Vector3(8, 0.1, 8), 2)
 		victim.take_hit(100000, victim.global_position + Vector3.UP * 3, Vector3.FORWARD, 1)
 		await flush()
 	game.levelup_pending = 0
-	check(game.level_number >= 7, "kill XP unlocks the entire arsenal")
-	for i in range(1, 5):
+	check(game.level_number >= 8, "kill XP unlocks the entire arsenal")
+	for i in range(1, game.player.WEAPONS.size()):
 		game.player.switch_weapon(i)
 		game.player.camera.look_at(target.global_position + Vector3.UP * 1.15)
 		before = target.hp

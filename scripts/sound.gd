@@ -6,7 +6,7 @@ var music: AudioStreamPlayer
 
 func _ready() -> void:
 	rng.randomize()
-	for name in ["pistol", "smg", "shotgun", "rifle", "coil", "hit", "headshot", "hurt", "reload", "unlock", "growl", "step", "empty"]:
+	for name in ["pistol", "smg", "shotgun", "rifle", "coil", "hit", "headshot", "hurt", "reload", "unlock", "growl", "step", "empty", "explosion", "metal_hit", "wood_hit", "concrete_hit", "wood_break", "sniper", "bolt"]:
 		bank[name] = _synthesize(name)
 	music = AudioStreamPlayer.new()
 	add_child(music)
@@ -26,12 +26,13 @@ func play(name: String, volume: float = 0.0, pitch: float = 1.0) -> void:
 	player.play()
 
 func positional(name: String, pos: Vector3, volume: float = 0.0) -> void:
+	if not bank.has(name): return
 	var player := AudioStreamPlayer3D.new()
 	add_child(player)
 	player.stream = bank[name]
 	player.position = pos
 	player.volume_db = volume
-	player.max_distance = 28.0
+	player.max_distance = 65.0 if name in ["explosion", "sniper"] else 28.0
 	player.unit_size = 7.0
 	player.pitch_scale = rng.randf_range(0.75, 1.15)
 	player.finished.connect(player.queue_free)
@@ -48,7 +49,7 @@ func _stream(samples: PackedByteArray, loop: bool = false) -> AudioStreamWAV:
 	return stream
 
 func _synthesize(kind: String) -> AudioStreamWAV:
-	var duration: float = {"pistol": 0.23, "smg": 0.16, "shotgun": 0.48, "rifle": 0.3, "coil": 0.7, "hit": 0.1, "headshot": 0.18, "hurt": 0.32, "reload": 0.45, "unlock": 0.65, "growl": 1.3, "step": 0.09, "empty": 0.06}[kind]
+	var duration: float = {"pistol": 0.23, "smg": 0.16, "shotgun": 0.48, "rifle": 0.3, "coil": 0.7, "hit": 0.1, "headshot": 0.18, "hurt": 0.32, "reload": 0.45, "unlock": 0.65, "growl": 1.3, "step": 0.09, "empty": 0.06, "explosion": 1.2, "metal_hit": 0.25, "wood_hit": 0.17, "concrete_hit": 0.2, "wood_break": 0.55, "sniper": 0.85, "bolt": 0.38}[kind]
 	var count := int(duration * 22050)
 	var bytes := PackedByteArray()
 	bytes.resize(count * 2)
@@ -81,6 +82,16 @@ func _synthesize(kind: String) -> AudioStreamWAV:
 				value = low * 2.2 * exp(-t * 48.0)
 			"empty":
 				value = noise * 0.25 * exp(-t * 100.0)
+			"explosion":
+				value = (low * 2.6 + sin(TAU * (47 * t - 9 * t * t)) * 0.5) * exp(-t * 4) + noise * 0.55 * exp(-t * 27)
+			"metal_hit":
+				value = (sin(TAU * 2150 * t) * 0.35 + sin(TAU * 3700 * t) * 0.15 + noise * 0.25) * exp(-t * 23)
+			"wood_hit", "concrete_hit", "wood_break":
+				value = (low * 1.8 + noise * 0.3) * exp(-t * (10 if kind == "wood_break" else 36))
+			"sniper":
+				value = noise * 0.7 * exp(-t * 40) + (low * 2 + sin(TAU * 62 * t) * 0.55) * exp(-t * 9)
+			"bolt":
+				value = noise * 0.5 * (exp(-t * 80) + exp(-absf(t - 0.23) * 70)) + sin(t * 3500) * 0.1 * exp(-t * 12)
 		bytes.encode_s16(i * 2, int(clampf(value, -1.0, 1.0) * 30000))
 	return _stream(bytes)
 

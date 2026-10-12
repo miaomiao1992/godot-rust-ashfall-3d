@@ -7,11 +7,14 @@ const EffectsScript = preload("res://scripts/effects.gd")
 const SoundScript = preload("res://scripts/sound.gd")
 const HudScript = preload("res://scripts/hud.gd")
 const LanGameScript = preload("res://scripts/lan_game.gd")
+const WarehouseScript = preload("res://scripts/warehouse.gd")
+const BattlePhysicsScript = preload("res://scripts/battle_physics.gd")
 
 var world: Node3D
 var level
 var player
 var fx
+var battle
 var sound
 var hud
 var state := "menu"
@@ -83,10 +86,23 @@ func _ready() -> void:
 		call_deferred("_arena_regression")
 	if "--lan-host" in OS.get_cmdline_user_args() or "--lan-client" in OS.get_cmdline_user_args():
 		call_deferred("_lan_test_start")
+	if "--pvp-host" in OS.get_cmdline_user_args() or "--pvp-client" in OS.get_cmdline_user_args():
+		var probe = load("res://tests/pvp_peer.gd").new()
+		probe.game = self
+		add_child(probe)
+	if "--battle-host" in OS.get_cmdline_user_args() or "--battle-client" in OS.get_cmdline_user_args():
+		var probe = load("res://tests/battle_peer.gd").new()
+		probe.game = self
+		add_child(probe)
 
 func _setup_inputs() -> void:
 	var keys := {"forward": KEY_W, "back": KEY_S, "left": KEY_A, "right": KEY_D, "sprint": KEY_SHIFT, "jump": KEY_SPACE, "reload": KEY_R, "flashlight": KEY_F, "interact": KEY_E, "weapon_1": KEY_1, "weapon_2": KEY_2, "weapon_3": KEY_3, "weapon_4": KEY_4, "weapon_5": KEY_5}
 	keys["upgrade_menu"] = KEY_U
+	keys["weapon_6"] = KEY_6
+	keys["grenade"] = KEY_G
+	keys["flash_grenade"] = KEY_Q
+	keys["smoke_grenade"] = KEY_C
+	keys["scoreboard"] = KEY_TAB
 	for action in keys:
 		if not InputMap.has_action(action):
 			InputMap.add_action(action)
@@ -141,7 +157,7 @@ func _build_run() -> void:
 	world.process_mode = Node.PROCESS_MODE_PAUSABLE
 	add_child(world)
 	seed_value = rng.randi_range(100000, 999999)
-	level = LevelScript.new()
+	level = WarehouseScript.new() if is_pvp() else LevelScript.new()
 	level.game = self
 	world.add_child(level)
 	level.generate(stage_index)
@@ -150,6 +166,10 @@ func _build_run() -> void:
 	world.add_child(fx)
 	sound = SoundScript.new()
 	world.add_child(sound)
+	battle = BattlePhysicsScript.new()
+	battle.game = self
+	world.add_child(battle)
+	battle.setup()
 	player = PlayerScript.new()
 	player.game = self
 	if is_lan():
@@ -201,6 +221,39 @@ func start_run(start_stage: int = 0) -> void:
 	_begin_wave()
 	hud.toast("保持移动。瞄准头部。活下来。", Color(0.68, 0.89, 0.86), 4.0)
 
+func is_pvp() -> bool:
+	return is_lan() and lan.mode == "pvp"
+
+func start_pvp() -> void:
+	if not is_pvp() or not lan.host(): return
+	get_tree().paused = false
+	Engine.time_scale = 1.0
+	core.pvp_start()
+	stage_index = 3
+	wave = 0
+	level_number = 8
+	xp = 0
+	xp_needed = 80
+	kills = 0
+	headshots = 0
+	shots_fired = 0
+	shots_hit = 0
+	levelup_pending = 0
+	hitstop_left = 0
+	survival_time = 0
+	spawn_left = 0
+	alive = 0
+	next_wave = 0
+	objective_waiting = false
+	state = "playing"
+	_build_run()
+	lan.rules_clock_ms = Time.get_ticks_msec()
+	Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+	hud.hide_overlay()
+	var teams := [0, 0]
+	for f in lan.fighters.values(): teams[int(f.team)] += 1
+	hud.wave_banner("仓库交锋 · RED vs BLUE", "%dv%d 团队竞赛 · 50 杀 / 10 分钟 · G 手雷 / Q 闪光 / C 烟雾" % teams)
+
 func _begin_wave() -> void:
 	var data: Dictionary = core.advance_wave()
 	if int(data.stage) != stage_index:
@@ -233,6 +286,11 @@ func _process(delta: float) -> void:
 	player.rig.visible = state != "dead" and (not is_lan() or player.life == "alive")
 	if is_lan() and not lan.host(): return
 	if state != "playing":
+		return
+	if is_pvp():
+		survival_time += delta
+		for pawn in lan.active_players():
+			if pawn.position.y < level.fall_threshold: lan.place_pvp_player(pawn.peer_id)
 		return
 	if hitstop_left > 0:
 		hitstop_left -= delta / maxf(Engine.time_scale, 0.01)
@@ -339,7 +397,7 @@ func zombie_killed(zombie, head: bool) -> void:
 	if data.levels_gained > 0:
 		if is_lan(): hud.toast("团队升级 · U 分配个人强化", Color(0.3, 0.9, 0.8), 4)
 		upgrade_due = 0.8
-		for i in range(1, 5):
+		for i in range(1, player.WEAPONS.size()):
 			if old_level < int(player.WEAPONS[i].level) and level_number >= int(player.WEAPONS[i].level):
 				hud.toast("武器解锁  //  %s  ·  按 %d 装备" % [player.WEAPONS[i].name, i + 1], Color(0.15, 0.9, 0.84), 5)
 				sound.play("unlock", -6)
@@ -476,6 +534,7 @@ func return_to_menu() -> void:
 	hud.show_menu()
 
 func _change_stage(index: int) -> void:
+	if is_instance_valid(battle): battle.free()
 	for item in pickups:
 		item.node.queue_free()
 	pickups.clear()
@@ -497,6 +556,10 @@ func _change_stage(index: int) -> void:
 	fx = EffectsScript.new()
 	fx.game = self
 	world.add_child(fx)
+	battle = BattlePhysicsScript.new()
+	battle.game = self
+	world.add_child(battle)
+	battle.setup()
 	player.position = level.player_spawn
 	player.velocity = Vector3.ZERO
 	player.rotation.y = 0
@@ -514,6 +577,19 @@ func _change_stage(index: int) -> void:
 
 func _style_environment() -> void:
 	var env := ambience.environment
+	if is_pvp():
+		env.fog_enabled = false
+		env.ambient_light_color = Color(0.72, 0.78, 0.86)
+		env.ambient_light_energy = 0.85
+		var panorama := PanoramaSkyMaterial.new()
+		panorama.panorama = load("res://assets/skies/harbor_overcast.png")
+		env.sky.sky_material = panorama
+		env.background_energy_multiplier = 0.85
+		key_light.rotation_degrees = Vector3(-55, -35, 0)
+		key_light.light_color = Color(0.92, 0.94, 1)
+		key_light.light_energy = 1.1
+		return
+	env.fog_enabled = true
 	var colors := [Color(0.28, 0.26, 0.24), Color(0.19, 0.25, 0.29), Color(0.25, 0.06, 0.04)]
 	env.fog_light_color = colors[stage_index]
 	env.fog_density = [0.0035, 0.0048, 0.011][stage_index]

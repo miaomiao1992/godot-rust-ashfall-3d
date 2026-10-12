@@ -1,8 +1,8 @@
 # ASHFALL · 余烬禁区
 
-Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.4.0 LAN 三大关卡场景全面优化版**。
-当前开发分支：`feature/lan-coop`。`main` 为已发布的 v0.2.1 单机稳定版。
-完整挑战包括三个固定设计的关卡、九波尸潮、三个关底 Boss，以及成长解锁的五种武器。
+Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.5.0 LAN 仓库 PvP、可选机器人与战斗物理版**。
+v0.5.0 发布源码同步至 `main` 与 `feature/lan-coop`；历史单机稳定包保留为 v0.2.1。
+完整挑战包括三个固定设计的关卡、九波尸潮、三个关底 Boss，以及成长解锁的六种武器。
 
 ## 场景预览
 
@@ -13,17 +13,58 @@ Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.
 
 ## Windows 64 位游玩
 
-**下载局域网版：[Windows64 LAN v0.4.0 预发布版](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.4.0-lan)。**
-本地发行版：`dist/ASHFALL-LAN-Windows64-v0.4.0.zip`。完整解压后运行 `ASHFALL-LAN.exe`。
+**下载局域网版：[Windows64 LAN v0.5.0](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.5.0-lan)。**
+本地发行版：`dist/ASHFALL-LAN-Windows64-v0.5.0.zip`。完整解压后运行 `ASHFALL-LAN.exe`。
 原单机稳定版：[Windows v0.2.1 Release](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.2.1)。
 
 1. 将 ZIP 完整解压到任意文件夹。
-2. 双击 `ASHFALL-LAN.exe`，选择「单人生存」或「局域网合作」。
+2. 双击 `ASHFALL-LAN.exe`，选择「单人生存」、「局域网合作」或「仓库 PvP」。
 3. 保留同目录的 `.pck`、Rust `.dll` 和其他随包文件；无需安装 Godot 或 Rust。
 
 运行环境：Windows 10 / 11 64 位，支持 OpenGL 3.3 的显卡，键盘和鼠标。
 
+## 版本历史
+
+| 版本 | 状态 | 主要变化 | 发行包／说明 |
+|---|---|---|---|
+| **v0.5.0 LAN** | **当前版本** | 1v1–5v5 仓库 PvP、可选补位机器人、可进入管道／屋顶、4×／8×狙击镜、子弹穿透／隔墙爆炸、物理破坏与战斗痕迹 | [Windows 下载](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.5.0-lan) · [完整更新说明](docs/releases/v0.5.0-lan.md) |
+| v0.4.0 | 源码迭代，功能包含于 v0.5.0 | 高架、船坞、实验场环境全面重构，新增场景细节与尸体物理 | [场景优化源码](https://github.com/xiejunlei/ashfall-3d/tree/abde48c)，无独立 GitHub 发行包 |
+| v0.3.4 LAN | 历史预发布包 | 房主大厅选起始地图、桥面闪烁修复、短曳光、六类尸体真实贴地 | [Windows 下载](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.3.4-lan) · [更新说明](docs/release-v0.3.4-lan.md) |
+| v0.3.3 | 源码迭代，功能包含于后续版本 | 队友武器／持枪／俯仰同步、本机射击预测、地面材质与特效性能修复 | 详情见下方 v0.3.3 小节，无独立 GitHub 发行包 |
+| v0.3.2 LAN | 历史预发布包 | 独立幸存者士兵模型、待机／走／跑动画，玩家与怪物外观分离 | [Windows 下载](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.3.2-lan) · [更新说明](docs/releases/v0.3.2-lan.md) |
+| v0.3.1 LAN | 历史预发布包 | 修复骨骼怪物身体不显示；加载保护、跨关同步与渲染包围盒修复 | [Windows 下载](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.3.1-lan) · [更新说明](docs/releases/v0.3.1-lan.md) |
+| v0.3.0 LAN | 初始合作源码阶段 | Rust ENet 网络、房间发现、四人合作、独立角色状态、倒地救援和热加入 | [开发说明](docs/releases/v0.3.0-lan.md)，无独立 GitHub 发行包 |
+| v0.2.1 | 历史单机稳定包 | 三关九波生存、Boss、成长武装，以及第三关卡关／越界修复 | [Windows 下载](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.2.1) · [更新说明](docs/releases/v0.2.1.md) |
+
+联机请统一使用 **v0.5.0**；历史发行包可在 [全部 Releases](https://github.com/xiejunlei/ashfall-3d/releases) 查找。
+
 ## 局域网合作
+
+### v0.5.0：仓库交锋 PvP
+
+当前源码新增主菜单「仓库 PvP」入口，支持 **1v1 至 5v5**。大厅自动平衡红蓝队，也可手动选队；房主可勾选「缺位补机器人」，单人立即开始 1v1，多人时补齐较少的一方。取消勾选后双方真人人数需相等。率先取得 50 杀获胜，10 分钟到时按比分结算，平分为平局。阵亡后 5 秒重生，出生保护 2 秒；关闭友伤，六种武器全部解锁。
+
+- **仓库地面**：中央货仓、装卸通道、维修通道三条主路线与对称掩体。
+- **可进入管道**：四条空心工业管道连通两侧通道与中央区域，角色可以直接走入、穿过和原路返回，管口无台阶阻挡。
+- **可登屋顶**：双方各有一条实体坡道与连接平台，登上 11 米高的屋顶交战区；通风机组形成掩体，周边设护栏，可以沿坡道返回地面。
+- **投掷物**：`G` 手雷、`Q` 闪光弹、`C` 烟雾弹，每次出生携带 2 / 2 / 1 枚。房主处理弹跳、引信、爆炸遮挡和闪光暴露；烟雾持续 12 秒。
+- **战局同步**：比分、阵亡／重生、投掷物、闪光、击杀播报、结算和重开均由房主同步；按住 `Tab` 查看比分表。
+- **可选机器人**：房主控制补位勾选项，客户端同步设置；真人热加入会替换机器人，离开时按需补回。机器人使用 A* 网格寻路与屋顶坡道路线，真实碰撞移动、视线判断、追击、侧移、射击和换弹，并共用 Rust 战斗与重生规则。
+- **战斗物理与残留**：木箱、桶和交通锥可被推撞、子弹和爆炸推动；箱体／桶可破坏，产生真实刚体碎片。弹孔按金属、木材和混凝土区别表现，移动物体上的弹孔随物体移动；爆炸留下焦痕、烟尘，破桶留下化学污染。痕迹与物件状态同步到客户端和热加入玩家，限额为 192 处表面痕迹、48 个临时刚体碎片。
+- **真正的聚焦狙击**：`6` 装备 SR-96 远望，按住右键开镜，镜内滚轮切换 4× / 8×，站定按住 Shift 屏息；真实摄像机视野缩放、刻线瞄准镜、射后拉栓及独立 5 发弹匣。
+- **材质／厚度穿透**：Godot 测量实体入口和出口的路径厚度，Rust 判定穿透与衰减。步枪、狙击枪、电磁炮具有不同深度限制；爆炸冲击波可穿过薄障碍，多个障碍累计衰减，厚重墙体阻断伤害。闪光仍需视线无遮挡。
+
+本版 LAN 网络标识为 `0.5.0-lan`，联机玩家统一使用 v0.5.0 发行包。
+
+| 管道内部 | 可通行屋顶 | 上屋顶坡道 |
+|---|---|---|
+| ![可穿过的工业管道](tests/previews/23-pvp-pipe.png) | ![屋顶交战区](tests/previews/24-pvp-roof.png) | ![双方屋顶通行坡道](tests/previews/26-pvp-roof-access.png) |
+
+| 可选机器人 | 弹孔 | 爆炸／破桶残留 |
+|---|---|---|
+| ![机器人补位勾选项](tests/previews/30-pvp-bot-choice.png) | ![实际表面弹孔](tests/previews/28-bullet-holes.png) | ![破桶污染与物理碎片](tests/previews/27-blast-pollution.png) |
+
+后续优化记录：[随机昼夜与三维导航网格评估](docs/pvp-roadmap.md)。
 
 ### v0.4.0 三大关卡全面视觉与场景重构
 
@@ -85,7 +126,7 @@ Godot 的 ENet API 反射调用集中在 Rust 引擎适配边界，以兼容当�
 
 房主执行战斗与尸潮，客户端执行本地移动预测与快照校正。完整战局同步包含稳定实体 ID、战局编号和快照序号。
 射击反馈在本机立即表现，命中以房主结果确认。
-Rust 现有 18 项测试，配合严格 Clippy；联机测试使用真正的房主和客户端进程。
+Rust 现有 28 项测试，配合严格 Clippy；联机测试使用真正的房主和客户端进程。
 运行验证已覆盖本机 macOS 多进程和图形客户端；两台 Windows 电脑之间的局域网通信尚待实机确认。
 
 ### v0.2.1 卡关修复
@@ -108,7 +149,8 @@ Rust 现有 18 项测试，配合严格 Clippy；联机测试使用真正的房�
 | 换弹 / 手电 | R / F |
 | 操作冷却阀 | E |
 | 救援队友 / 个人强化 | 按住 E / U |
-| 切换武器 | 1–5 或鼠标滚轮 |
+| 切换武器 | 1–6 或鼠标滚轮 |
+| 狙击开镜 / 倍率 / 屏息 | 按住右键 / 镜内滚轮 / 站定按住 Shift |
 | 暂停、鼠标灵敏度 | Esc |
 | 性能信息 | F3 |
 
@@ -162,6 +204,17 @@ Boss 半血狂暴。红圈砸地可离开范围或跳跃；冲锋有提前提示
 | 3 | SG-8 破门者 | 10 弹丸霰弹、强击退与重反馈 |
 | 5 | AR-37 灰烬 | 全自动突击步枪 |
 | 7 | RX-1 审判 | 可穿透四名敌人的电磁炮 |
+| 8 | SR-96 远望 | 栓动狙击枪、4× / 8× 聚焦瞄准、5 发弹匣 |
+
+仓库 PvP 中所有武器直接可用。子弹沿入射方向测量厚度，斜射会增加等效厚度：
+
+| 武器 | 混凝土 | 金属 | 木材 |
+|---|---:|---:|---:|
+| 突击步枪 | 0.25m | 0.10m | 0.65m |
+| 狙击枪 | 0.55m | 0.30m | 1.20m |
+| 电磁炮 | 1.00m | 0.50m | 2.20m |
+
+接近厚度上限时剩余伤害约 20%，多层穿透继续累乘；霰弹枪不穿透实体掩体，手枪／冲锋枪仅能穿过很薄的木质障碍。爆炸另用冲击波传递规则，承重厚墙仍提供保护。
 
 击杀与弱点击杀获得经验。升级时选择：伤害强化、生命与抗性、机动与换弹。
 命中反馈包括枪口闪光、局部光照、后坐力、弹道、弹壳、血雾、击退、命中标记、击杀反馈和短暂命中停顿。
@@ -231,9 +284,17 @@ godot --path . --script res://tests/highway_surface_regression.gd
 godot --path . --script res://tests/corpse_ground_regression.gd
 godot --path . --script res://tests/lan_map_regression.gd
 python3 tools/test_lan.py --map=2
+python3 tools/test_pvp.py
+python3 tools/test_pvp.py --ten
+python3 tools/test_pvp.py --render
+godot --path . --script res://tests/warehouse_traversal.gd
+godot --path . --script res://tests/combat_physics_regression.gd
+godot --path . --script res://tests/pvp_bots_regression.gd
+python3 tools/test_battle.py
 ```
 
-Rust 包含 18 项规则、合作和网络测试。Godot 的 88 项集成检查覆盖实际射线命中、全部武器、换弹、解锁、三关路径连通、成长保留、Boss 技能与狂暴、九波自动流程、死亡重启和通关，还验证关卡地面拓扑差异、真实坡道碰撞与丧尸爬坡、导航高差连续性、冷却阀操作／波次门槛、腐蚀伤害时序／固定落点／限量与防叠加。
+Rust 包含 28 项规则、合作、PvP 和网络测试。Godot 的 89 项集成检查覆盖实际射线命中、全部武器、换弹、解锁、三关路径连通、成长保留、Boss 技能与狂暴、九波自动流程、死亡重启和通关，还验证关卡地面拓扑差异、真实坡道碰撞与丧尸爬坡、导航高差连续性、冷却阀操作／波次门槛、腐蚀伤害时序／固定落点／限量与防叠加。
+仓库通行回归使用实际玩家胶囊和 `move_and_slide`，验证四条管道双向穿行、两侧坡道上下行和屋顶连接，共 22 项检查。PvP 多进程回归覆盖真实枪械射线击杀、比分、出生保护、五秒重生、闪光／烟雾同步、客户端投掷、屋顶高度／管道位置同步、50 杀结算和重开；支持双人及十人房间。
 第三关另有 15 项专项回归：真实击退、跌落恢复与血量保留、四门六类怪物出生、活怪计数校正、失败出生配额重试，以及第一波 106 只实怪清理后进入第二波。
 视觉截图存于 `tests/previews/`，`01/02/03-layout.png` 为俯视布局，`05-acid-warning.png` 和 `06-acid-active.png` 为腐蚀阶段对照。
 

@@ -11,7 +11,7 @@ RENDER = "--render" in sys.argv
 
 def launch(name, args):
     started = time.monotonic()
-    process = subprocess.Popen(["godot", *(["--resolution", "640x400", "--max-fps", "60"] if RENDER else ["--headless"]), "--path", str(ROOT), "--", *args], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+    process = subprocess.Popen(["godot", "--max-fps", "60", *(["--resolution", "640x400"] if RENDER else ["--headless"]), "--path", str(ROOT), "--", *args], cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     lines = []
     def reader():
         for line in process.stdout:

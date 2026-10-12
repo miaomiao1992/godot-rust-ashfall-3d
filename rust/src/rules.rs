@@ -18,7 +18,7 @@ pub struct Weapon {
     pub automatic: bool,
 }
 
-pub const WEAPONS: [Weapon; 5] = [
+pub const WEAPONS: [Weapon; 6] = [
     Weapon {
         name: "P-09 守夜者",
         short: "守夜者",
@@ -99,7 +99,68 @@ pub const WEAPONS: [Weapon; 5] = [
         force: 10.0,
         automatic: false,
     },
+    Weapon {
+        name: "SR-96 远望",
+        short: "远望",
+        sound: "sniper",
+        level: 8,
+        damage: 125.0,
+        rate: 1.45,
+        magazine: 5,
+        reserve: 30,
+        reload: 2.8,
+        pellets: 1,
+        spread: 0.025,
+        recoil: 0.085,
+        force: 8.0,
+        automatic: false,
+    },
 ];
+
+/// Limits in metres along the ray, so oblique hits pay for more material.
+pub fn penetration_limit(weapon: usize, surface: &str) -> f32 {
+    let limits = match weapon {
+        0 => [0.0, 0.0, 0.18],
+        1 => [0.0, 0.0, 0.25],
+        3 => [0.25, 0.10, 0.65],
+        4 => [1.0, 0.50, 2.2],
+        5 => [0.55, 0.30, 1.2],
+        _ => [0.0; 3],
+    };
+    limits[match surface {
+        "metal" => 1,
+        "wood" | "plastic" => 2,
+        _ => 0,
+    }]
+}
+
+pub fn penetration_factor(weapon: usize, surface: &str, thickness: f32) -> f32 {
+    let limit = penetration_limit(weapon, surface);
+    if !thickness.is_finite() || thickness <= 0.0 || limit == 0.0 || thickness > limit {
+        return 0.0;
+    }
+    (1.0 - thickness / limit * 0.8).clamp(0.2, 0.95)
+}
+
+pub fn blast_cover_limit(surface: &str) -> f32 {
+    match surface {
+        "wood" | "plastic" => 2.5,
+        "metal" => 0.5,
+        _ => 1.2,
+    }
+}
+
+pub fn blast_cover_factor(surface: &str, thickness: f32) -> f32 {
+    if !thickness.is_finite() || thickness <= 0.0 || thickness > blast_cover_limit(surface) {
+        return 0.0;
+    }
+    let resistance = match surface {
+        "wood" | "plastic" => 1.2,
+        "metal" => 6.0,
+        _ => 4.5,
+    };
+    (-thickness * resistance).exp()
+}
 
 #[derive(Clone, Copy, Debug)]
 pub struct Monster {
@@ -355,5 +416,28 @@ mod tests {
         assert_eq!(boss_action(0, 20.0, 0, false), "charge");
         assert_eq!(boss_action(1, 20.0, 0, false), "acid");
         assert_eq!(boss_action(2, 4.0, 0, true), "smash");
+    }
+
+    #[test]
+    fn penetration_is_material_weapon_and_thickness_dependent() {
+        assert_eq!(penetration_factor(0, "concrete", 0.1), 0.0);
+        assert_eq!(penetration_factor(2, "wood", 0.1), 0.0);
+        assert!(penetration_factor(3, "wood", 0.2) > 0.5);
+        assert_eq!(penetration_factor(3, "metal", 0.2), 0.0);
+        assert!(penetration_factor(5, "metal", 0.2) > 0.0);
+        assert!(penetration_factor(4, "concrete", 0.7) > 0.0);
+        for invalid in [f32::NAN, f32::INFINITY, -1.0, 0.0] {
+            assert_eq!(penetration_factor(5, "wood", invalid), 0.0);
+            assert_eq!(blast_cover_factor("wood", invalid), 0.0);
+        }
+    }
+
+    #[test]
+    fn blast_cover_compounds_and_heavy_walls_stop_transmission() {
+        let thin = blast_cover_factor("wood", 0.18);
+        assert!(thin > 0.5 && thin < 1.0);
+        assert!(thin * thin < thin);
+        assert!(blast_cover_factor("concrete", 1.0) < 0.03);
+        assert_eq!(blast_cover_factor("concrete", 1.5), 0.0);
     }
 }

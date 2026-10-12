@@ -26,8 +26,8 @@ pub struct Survivor {
     pub resistance: f32,
     pub reload_multiplier: f32,
     pub speed_bonus: f32,
-    pub magazines: [i32; 5],
-    pub reserves: [i32; 5],
+    pub magazines: [i32; WEAPONS.len()],
+    pub reserves: [i32; WEAPONS.len()],
     pub weapon: usize,
     pub points: i32,
     pub bleed: f32,
@@ -47,7 +47,7 @@ pub struct Survivor {
 }
 
 impl Survivor {
-    fn new(id: PeerId, name: String, level: i32) -> Self {
+    pub(crate) fn new(id: PeerId, name: String, level: i32) -> Self {
         Self {
             id,
             name,
@@ -58,8 +58,8 @@ impl Survivor {
             resistance: 0.0,
             reload_multiplier: 1.0,
             speed_bonus: 0.0,
-            magazines: [15, 36, 8, 30, 6],
-            reserves: [999, 240, 56, 180, 36],
+            magazines: WEAPONS.map(|w| w.magazine),
+            reserves: WEAPONS.map(|w| w.reserve),
             weapon: 0,
             points: (level - 1).max(0),
             bleed: 0.0,
@@ -206,14 +206,23 @@ impl Survivor {
     }
 }
 
-#[derive(Default)]
 pub struct Coop {
     pub players: BTreeMap<PeerId, Survivor>,
+    pub capacity: usize,
     revivers: BTreeMap<PeerId, PeerId>,
+}
+impl Default for Coop {
+    fn default() -> Self {
+        Self {
+            players: BTreeMap::new(),
+            capacity: 4,
+            revivers: BTreeMap::new(),
+        }
+    }
 }
 impl Coop {
     pub fn register(&mut self, id: PeerId, name: String, level: i32) {
-        if self.players.len() < 4 && id.0 > 0 {
+        if self.players.len() < self.capacity && id.0 > 0 {
             self.players
                 .entry(id)
                 .or_insert_with(|| Survivor::new(id, name, level));
@@ -361,5 +370,22 @@ mod tests {
         p.invulnerability = 0.0;
         assert!(!p.damage(f32::NAN));
         assert_eq!(p.hp, 100.0);
+    }
+
+    #[test]
+    fn sniper_has_independent_ammo_bolt_cadence_and_reload() {
+        let mut p = Survivor::new(PeerId(1), "sniper".into(), 8);
+        p.weapon = 5;
+        assert!(p.fire(1));
+        assert_eq!(p.magazines[5], 4);
+        p.tick(1.0);
+        assert!(!p.fire(2));
+        p.tick(0.5);
+        assert!(p.fire(3));
+        assert!(p.begin_reload());
+        p.tick(3.0);
+        assert_eq!(p.magazines[5], 5);
+        assert_eq!(p.reserves[5], 28);
+        assert_eq!(p.magazines[4], WEAPONS[4].magazine);
     }
 }

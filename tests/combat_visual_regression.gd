@@ -63,7 +63,7 @@ func run() -> void:
 	pawn.life = "alive"
 	pawn._process(0)
 	check(pawn.rig.visible, "revived teammate weapon visible")
-	for index in 5:
+	for index in game.player.WEAPONS.size():
 		pawn.weapon_index = index
 		pawn._build_weapon()
 		pawn._process(0)

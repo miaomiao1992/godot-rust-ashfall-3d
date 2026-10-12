@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const PROTOCOL: u16 = 1;
-const BUILD: &str = "0.3.2-lan";
+const BUILD: &str = "0.5.0-lan";
 const LIMIT: usize = 1_048_576;
 // First-use shader compilation and scene loading can stall the engine thread.
 // Leave enough time for those stalls; explicit ENet disconnects remain immediate.
@@ -34,6 +34,8 @@ pub struct Room {
     pub port: u16,
     pub players: usize,
     pub capacity: usize,
+    #[serde(default)]
+    pub mode: String,
     pub playing: bool,
     pub stage: i32,
     pub wave: i32,
@@ -69,6 +71,8 @@ pub enum ActionKind {
     Upgrade,
     Ready,
     Restart,
+    Team,
+    Grenade,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Action {
@@ -493,12 +497,14 @@ impl LanSession {
                     if build != BUILD {
                         self.send(
                             sender,
-                            Wire::Reject("版本不匹配，请使用 LAN v0.3.2".into()),
+                            Wire::Reject("版本不匹配，请使用 LAN v0.5.0".into()),
                             true,
                         );
                         return;
                     }
-                    if !self.members.contains_key(&sender) && self.members.len() >= 4 {
+                    if !self.members.contains_key(&sender)
+                        && self.members.len() >= self.room.as_ref().map_or(4, |r| r.capacity)
+                    {
                         self.send(sender, Wire::Reject("房间已满".into()), true);
                         return;
                     }
@@ -652,8 +658,8 @@ impl LanSession {
                             && room.magic == "ASHFALL_LAN"
                             && room.protocol == PROTOCOL
                             && room.port > 0
-                            && room.capacity == 4
-                            && room.players <= 4
+                            && matches!(room.capacity, 4 | 10)
+                            && room.players <= room.capacity
                         {
                             let key = room.room_id.clone();
                             let received_ip = addr.ip().to_string();
@@ -725,7 +731,7 @@ impl LanSession {
             "create_server",
             &[
                 i64::from(port).to_variant(),
-                8i64.to_variant(),
+                16i64.to_variant(),
                 3i64.to_variant(),
             ],
         );
@@ -761,6 +767,7 @@ impl LanSession {
             port,
             players: 1,
             capacity: 4,
+            mode: "coop".into(),
             playing: false,
             stage: 0,
             wave: 0,
@@ -851,6 +858,16 @@ impl LanSession {
             r.stage = stage;
             r.wave = wave;
             r.playing = playing;
+        }
+    }
+    #[func]
+    fn configure_pvp_room(&mut self) {
+        if self.role == Role::Host
+            && let Some(r) = self.room.as_mut()
+        {
+            r.capacity = 10;
+            r.mode = "pvp".into();
+            r.stage = 3;
         }
     }
     #[func]
