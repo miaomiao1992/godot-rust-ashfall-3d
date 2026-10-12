@@ -490,6 +490,13 @@ impl AshfallCore {
         self.pvp.choose_team(coop::PeerId(id), team)
     }
     #[func]
+    fn pvp_join_team(&mut self, id: i64, team: i32) -> bool {
+        let (Ok(id), Ok(team)) = (u32::try_from(id), usize::try_from(team)) else {
+            return false;
+        };
+        self.pvp.join_team(&mut self.coop, coop::PeerId(id), team)
+    }
+    #[func]
     fn pvp_json(&self) -> GString {
         serde_json::to_string(&self.pvp)
             .unwrap_or_default()

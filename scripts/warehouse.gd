@@ -166,7 +166,8 @@ func spawn_yaw(team: int, slot: int) -> float:
 
 func ladder_at(feet: Vector3) -> AABB:
 	for ladder in ladders:
-		if ladder.grow(0.45).has_point(feet + Vector3.UP * 0.4): return ladder
+		var area := AABB(ladder.position - Vector3(0.95, 0.25, 0.95), ladder.size + Vector3(1.9, 1.05, 1.9))
+		if area.has_point(feet): return ladder
 	return AABB()
 
 func snapshot_brushes() -> Array:

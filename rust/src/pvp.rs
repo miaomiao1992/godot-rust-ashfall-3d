@@ -165,6 +165,49 @@ impl Pvp {
         p.team = team;
         true
     }
+    /// A late joiner may choose a side while loading, before becoming a target.
+    /// Active players cannot use this to escape combat or reset their health.
+    pub fn join_team(&mut self, coop: &mut Coop, id: PeerId, team: usize) -> bool {
+        if !self.started
+            || self.winner != -1
+            || team > 1
+            || !coop
+                .players
+                .get(&id)
+                .is_some_and(|p| p.life == Life::Spawning)
+            || !self.fighters.get(&id).is_some_and(|f| !f.is_bot)
+        {
+            return false;
+        }
+        let current = self.fighters[&id].team;
+        if current != team && self.counts()[team] >= TEAM_SIZE {
+            let Some(bot) = self
+                .fighters
+                .values()
+                .find(|f| f.is_bot && f.team == team)
+                .map(|f| f.id)
+            else {
+                return false;
+            };
+            self.fighters.remove(&bot);
+            coop.players.remove(&bot);
+        }
+        let fighter = self.fighters.get_mut(&id).unwrap();
+        fighter.team = team;
+        fighter.generation += 1;
+        fighter.respawn = 0.0;
+        fighter.flash = 0.0;
+        fighter.grenades = [2, 2, 1];
+        fighter.throw_cooldown = 0.0;
+        let name = fighter.name.clone();
+        let mut player = Survivor::new(id, name, 1);
+        player.weapon = 3;
+        player.points = 0;
+        player.invulnerability = 2.0;
+        coop.players.insert(id, player);
+        self.refill_bots(coop);
+        true
+    }
     pub fn start(&mut self, coop: &mut Coop) {
         self.started = true;
         self.remaining = MATCH_SECONDS;
@@ -444,5 +487,39 @@ mod tests {
         without.register(PeerId(1), "solo".into());
         without.refill_bots(&mut c);
         assert_eq!(without.fighters.len(), 1);
+    }
+
+    #[test]
+    fn late_join_selection_activates_only_a_loading_human() {
+        let mut p = Pvp {
+            fill_bots: true,
+            ..Default::default()
+        };
+        let mut c = Coop::default();
+        p.register(PeerId(1), "host".into());
+        p.start(&mut c);
+        p.refill_bots(&mut c);
+        p.register(PeerId(2), "late".into());
+        c.register(PeerId(2), "late".into(), 1);
+        c.players.get_mut(&PeerId(2)).unwrap().life = Life::Spawning;
+        assert!(p.join_team(&mut c, PeerId(2), 0));
+        assert_eq!(p.fighters[&PeerId(2)].team, 0);
+        assert_eq!(c.players[&PeerId(2)].life, Life::Alive);
+        assert_eq!(c.players[&PeerId(2)].weapon, 3);
+        assert_eq!(c.players[&PeerId(2)].invulnerability, 2.0);
+        assert!(!p.join_team(&mut c, PeerId(2), 1));
+        assert!(!p.join_team(&mut c, PeerId(1), 1));
+        assert_eq!(p.counts(), [2, 2]);
+    }
+
+    #[test]
+    fn late_join_rejects_full_human_side_without_activating() {
+        let (mut p, mut c) = fixture();
+        let id = PeerId(1);
+        let team = p.fighters[&id].team;
+        c.players.get_mut(&id).unwrap().life = Life::Spawning;
+        assert!(!p.join_team(&mut c, id, 1 - team));
+        assert_eq!(c.players[&id].life, Life::Spawning);
+        assert!(p.join_team(&mut c, id, team));
     }
 }

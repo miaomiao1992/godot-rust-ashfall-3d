@@ -6,6 +6,7 @@ var items: Dictionary = {}
 var next_id := 1
 var detonations := 0
 const SMOKE_SECONDS := 25.0
+const THROW_ARC_DEGREES := 18.0
 
 func _init(owner) -> void:
 	game = owner
@@ -30,9 +31,10 @@ func _visual(kind: int, smoke: bool = false) -> Node3D:
 	return GrenadeModel.build(game.world, kind, false)
 
 func throw_grenade(p, kind: int, yaw: float, pitch: float, soft: bool = false) -> void:
-	# CS 1.6 pitch-dependent release: 600 units/s level, capped at 750.
+	# Pitch-dependent release, capped at 750 GoldSrc units/s. Lift the neutral
+	# arc slightly for readability while retaining a low underhand trajectory.
 	var degrees := rad_to_deg(clampf(pitch, -1.5, 1.5))
-	var mapped := 10.0 + degrees * (80.0 / 90.0 if degrees >= 0 else 100.0 / 90.0)
+	var mapped := (8.0 if soft else THROW_ARC_DEGREES) + degrees * (80.0 / 90.0 if degrees >= 0 else 100.0 / 90.0)
 	var direction := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, deg_to_rad(mapped)) * Vector3.FORWARD
 	var origin: Vector3 = p.global_position + Vector3.UP * (0.72 if p.crouching else 1.55)
 	var start: Vector3 = origin + direction * 0.5
@@ -56,6 +58,7 @@ func throw_grenade(p, kind: int, yaw: float, pitch: float, soft: bool = false) -
 		"bounces": 0
 	}
 	item.node.position = start
+	item.node.scale = Vector3.ONE * 1.25
 	items[next_id] = item
 	next_id += 1
 
@@ -218,4 +221,13 @@ func process_visuals(delta: float) -> void:
 func smoke_at(pos: Vector3) -> bool:
 	for item in items.values():
 		if item.smoke and item.pos.distance_to(pos) < 4.5: return true
+	return false
+
+func smoke_blocks(origin: Vector3, target: Vector3) -> bool:
+	var segment := target - origin
+	var length_sq := segment.length_squared()
+	for item in items.values():
+		if not item.smoke or float(item.life) < 0.4: continue
+		var t := clampf((item.pos - origin).dot(segment) / maxf(length_sq, 0.001), 0, 1)
+		if item.pos.distance_to(origin + segment * t) < 4.5: return true
 	return false

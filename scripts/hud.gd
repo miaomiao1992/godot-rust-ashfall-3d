@@ -631,6 +631,17 @@ func show_pvp_lobby() -> void:
 	fill.disabled = not game.lan.host()
 	fill.toggled.connect(game.lan.set_fill_bots)
 	menu.add_child(fill)
+	_label("机器人难度", Vector2(815, 250), 18, WHITE)
+	var difficulty := OptionButton.new()
+	difficulty.name = "BotDifficultyChoice"
+	difficulty.position = Vector2(965, 242)
+	difficulty.size = Vector2(240, 36)
+	for title in ["普通", "困难", "地狱"]: difficulty.add_item(title)
+	difficulty.select(game.lan.bot_difficulty)
+	difficulty.disabled = not game.lan.host()
+	difficulty.item_selected.connect(game.lan.set_bot_difficulty)
+	_style_option(difficulty)
+	menu.add_child(difficulty)
 	for team in 2:
 		var x := 240 + team * 500
 		var color := Color(1, 0.25, 0.18) if team == 0 else Color(0.2, 0.55, 1)
@@ -646,6 +657,48 @@ func show_pvp_lobby() -> void:
 	begin.disabled = not game.lan.host()
 	_button("离开房间", Vector2(390, 785), Vector2(660, 48), game.return_to_menu)
 	menu_feedback = _label("", Vector2(390, 850), 16, MUTED)
+
+func _style_option(choice: OptionButton) -> void:
+	choice.add_theme_font_size_override("font_size", 18)
+	for key in ["font_color", "font_hover_color", "font_pressed_color", "font_disabled_color"]:
+		choice.add_theme_color_override(key, Color(0.85, 0.90, 0.90))
+	for state_name in ["normal", "hover", "pressed", "disabled", "focus"]:
+		var style := StyleBoxFlat.new()
+		style.bg_color = Color(0.16, 0.22, 0.24) if state_name == "hover" else Color(0.10, 0.16, 0.19)
+		style.border_color = Color(0.35, 0.48, 0.49)
+		style.set_border_width_all(1)
+		style.content_margin_left = 12
+		choice.add_theme_stylebox_override(state_name, style)
+	var popup := choice.get_popup()
+	popup.add_theme_color_override("font_color", Color(0.85, 0.90, 0.90))
+	popup.add_theme_color_override("font_hover_color", Color(0.90, 0.92, 0.89))
+	var panel := StyleBoxFlat.new()
+	panel.bg_color = Color(0.10, 0.16, 0.19)
+	popup.add_theme_stylebox_override("panel", panel)
+	var hover := StyleBoxFlat.new()
+	hover.bg_color = Color(0.19, 0.26, 0.28)
+	popup.add_theme_stylebox_override("hover", hover)
+
+func show_join_team() -> void:
+	_clear_menu()
+	_label("加入正在进行的仓库交锋", Vector2(390, 205), 36, WHITE)
+	_label("先选择红队或蓝队；选队期间不会受到伤害", Vector2(390, 270), 19, MUTED)
+	for team in 2:
+		var x := 240 + team * 500
+		var humans := 0
+		var bots := 0
+		for fighter in game.lan.fighters.values():
+			if int(fighter.team) != team: continue
+			if bool(fighter.get("is_bot", false)): bots += 1
+			elif int(fighter.id) != game.lan.local_id(): humans += 1
+		_panel(Vector2(x, 330), Vector2(460, 200), Color(0.65, 0.24, 0.17) if team == 0 else Color(0.17, 0.40, 0.65))
+		_label("红队" if team == 0 else "蓝队", Vector2(x + 30, 360), 29, ORANGE if team == 0 else CYAN)
+		_label("真人 %d / 5 · 机器人 %d" % [humans, bots], Vector2(x + 30, 420), 20, WHITE)
+		var button := _button("加入红队" if team == 0 else "加入蓝队", Vector2(x, 560), Vector2(460, 60), game.lan.request.bind("join_team", team))
+		button.name = "JoinRedTeam" if team == 0 else "JoinBlueTeam"
+		button.disabled = humans >= 5
+	_button("离开房间", Vector2(490, 675), Vector2(460, 52), game.return_to_menu)
+	Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
 func _draw_scoreboard() -> void:
 	_rect(Vector2(300, 260), Vector2(840, 405), DARK)

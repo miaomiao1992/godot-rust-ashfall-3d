@@ -47,6 +47,7 @@ func run() -> void:
 	check(not bot.team_marker.visible and not bot.name_label.visible, "death hides floating team disk and name")
 	var generation := int(game.lan.fighters[bot_id].generation)
 	check(await wait_until(func(): return int(game.lan.fighters[bot_id].generation) > generation), "bot uses five-second respawn")
+	game.lan.sync_stats()
 	check(bot.team_marker.visible and bot.name_label.visible, "respawn restores living team indicators")
 	game.core.coop_register(2, "Late human")
 	game.lan.refresh_pvp()

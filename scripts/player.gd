@@ -71,6 +71,8 @@ var grenade_throw_action := ""
 var crouching := false
 var capsule_collision: CollisionShape3D
 var climbing := false
+var ladder_detach_timer := 0.0
+var ladder_normal := Vector3.ZERO
 var grenade_ready_timer := 0.0
 var grenade_release_pending := false
 var grenade_soft_toss := false
@@ -176,6 +178,7 @@ func _physics_process(delta: float) -> void:
 		return
 	if game.is_lan() and not is_local and not game.lan.host(): return
 	shot_timer -= delta
+	ladder_detach_timer = maxf(0, ladder_detach_timer - delta)
 	invulnerability -= delta
 	empty_timer -= delta
 	if reload_timer > 0:
@@ -213,14 +216,50 @@ func _physics_process(delta: float) -> void:
 	velocity.x = move_toward(velocity.x, desired.x, delta * 32)
 	velocity.z = move_toward(velocity.z, desired.z, delta * 32)
 	var ladder: AABB = game.level.ladder_at(position) if game.level.has_method("ladder_at") else AABB()
-	climbing = ladder.size != Vector3.ZERO and absf(input.y) > 0.1 and life == "alive"
+	var jump_pressed: bool = (int(remote.get("buttons", 0)) & 1) != 0 if not is_local else Input.is_action_just_pressed("jump")
+	var at_top := ladder.size != Vector3.ZERO and is_on_floor() and position.y >= ladder.end.y - 0.35 and input.y <= 0
+	var was_climbing := climbing
+	var facing_ladder := false
+	if ladder.size != Vector3.ZERO:
+		var offset := position - ladder.get_center()
+		var face := Vector3(signf(offset.x), 0, 0) if ladder.size.x < ladder.size.z else Vector3(0, 0, signf(offset.z))
+		facing_ladder = (-global_basis.z).dot(face) < -0.35
+	climbing = ladder.size != Vector3.ZERO and absf(input.y) > 0.1 and life == "alive" and ladder_detach_timer <= 0 and not at_top and (was_climbing or (facing_ladder and not jump_pressed))
 	if climbing:
-		velocity.y = -input.y * 3.0
-		velocity.x = direction.x * 1.8
-		velocity.z = direction.z * 1.8
+		if not was_climbing:
+			var center := ladder.get_center()
+			ladder_normal = Vector3(signf(position.x - center.x), 0, 0) if ladder.size.x < ladder.size.z else Vector3(0, 0, signf(position.z - center.z))
+			if ladder_normal == Vector3.ZERO: ladder_normal = -direction
+			# Some original ladders border an awning: choose the exposed side,
+			# rather than pushing the capsule's head into the underside of it.
+			var distance := minf(ladder.size.x, ladder.size.z) * 0.5 + 0.8
+			var current_side := center + ladder_normal * distance
+			var other_side := center - ladder_normal * distance
+			current_side.y = position.y + (0.85 if crouching else 1.75)
+			other_side.y = current_side.y
+			var space := get_world_3d().direct_space_state
+			var top := ladder.end.y + (0.85 if crouching else 1.75)
+			var blocked := space.intersect_ray(PhysicsRayQueryParameters3D.create(current_side, Vector3(current_side.x, top, current_side.z), 1))
+			var alternative := space.intersect_ray(PhysicsRayQueryParameters3D.create(other_side, Vector3(other_side.x, top, other_side.z), 1))
+			if not blocked.is_empty() and alternative.is_empty(): ladder_normal = -ladder_normal
+		var half_thickness := minf(ladder.size.x, ladder.size.z) * 0.5
+		var stand_off := ladder.get_center() + ladder_normal * (half_thickness + 0.8)
+		var correction := (stand_off - position).dot(ladder_normal)
+		var horizontal := ladder_normal * clampf(correction / maxf(delta, 0.001), -3, 3)
+		horizontal += Vector3(direction.x, 0, direction.z).slide(ladder_normal) * 2.0
+		velocity = horizontal + Vector3.UP * (-input.y * 3.4)
+		if jump_pressed:
+			climbing = false
+			ladder_detach_timer = 0.4
+			velocity = ladder_normal * 4.5 + Vector3.UP * 7.2
+		elif input.y < 0 and position.y >= ladder.end.y - 0.6 and _try_ladder_mount(ladder):
+			climbing = false
+			ladder_detach_timer = 0.4
+			velocity = desired
 	elif not is_on_floor():
 		velocity.y -= 24 * delta
-	elif ((int(remote.get("buttons", 0)) & 1) != 0 if not is_local else Input.is_action_just_pressed("jump")) and life == "alive":
+	elif jump_pressed and life == "alive":
+		ladder_detach_timer = 0.65
 		velocity.y = 7.2
 	move_and_slide()
 	if not game.is_lan() or game.lan.host():
@@ -278,6 +317,22 @@ func set_crouching(value: bool) -> void:
 	capsule.height = 0.85 if crouching else 1.75
 	capsule_collision.position.y = 0.43 if crouching else 0.88
 	camera.position.y = 0.72 if crouching else 1.65
+
+func _try_ladder_mount(ladder: AABB) -> bool:
+	# Sweep up, then onto the ledge; never move through a ceiling or wall.
+	var raised := global_transform
+	var rise := maxf(0.1, ladder.end.y + 0.3 - position.y)
+	if rise > 1.1 or test_move(raised, Vector3.UP * rise): return false
+	raised.origin.y += rise
+	var target := ladder.get_center() - ladder_normal * 0.55
+	var across := Vector3(target.x - position.x, 0, target.z - position.z)
+	if test_move(raised, across): return false
+	raised.origin += across
+	var landing := KinematicCollision3D.new()
+	if not test_move(raised, Vector3.DOWN * 1.4, landing): return false
+	if landing.get_normal().y < 0.65: return false
+	global_position = raised.origin + landing.get_travel() + Vector3.UP * 0.015
+	return true
 
 func _update_weapon_pose() -> void:
 	camera.rotation = Vector3(aim_pitch - recoil + scope_sway.y + rng.randf_range(-1, 1) * trauma * 0.022, scope_sway.x + rng.randf_range(-1, 1) * trauma * 0.018, rng.randf_range(-1, 1) * trauma * 0.011)
@@ -613,6 +668,7 @@ func apply_coop_stats(data: Dictionary) -> void:
 	collision_layer = 2 if life == "alive" else 0
 	if is_instance_valid(team_marker): team_marker.visible = life == "alive"
 	if is_instance_valid(name_label): name_label.visible = life != "dead"
+	if is_instance_valid(avatar): avatar.visible = not is_local and life != "spawning"
 	if life != "alive": grenade_throw_action = ""
 	if life != "alive": grenade_release_pending = false
 	if life != "alive": scope_latched = false
@@ -677,8 +733,7 @@ func _build_avatar() -> void:
 		name_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 		name_label.pixel_size = 0.009
 		if game.is_pvp():
-			team_marker = Forge.sphere(self, Vector3(0, 1.25, 0), 0.4, Forge.material(Color.WHITE))
-			team_marker.scale = Vector3(1.15, 0.22, 0.95)
+			team_marker = Forge.sphere(self, Vector3(0, 2.05, 0), 0.045, Forge.material(Color.WHITE))
 
 func _process(delta: float) -> void:
 	grenade_ready_timer = maxf(0, grenade_ready_timer - delta)

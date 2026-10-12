@@ -509,6 +509,7 @@ func die() -> void:
 
 func pause_run() -> void:
 	if is_lan():
+		if lan.choosing_team: return
 		if state != "playing": return
 		if hud.menu.visible: resume_run()
 		else: hud.show_pause(); Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -524,6 +525,9 @@ func pause_run() -> void:
 
 func resume_run() -> void:
 	if is_lan():
+		if lan.choosing_team:
+			hud.show_join_team()
+			return
 		hud.hide_overlay()
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
 		return

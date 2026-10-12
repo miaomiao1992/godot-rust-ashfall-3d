@@ -33,6 +33,9 @@ var generations: Dictionary = {}
 var ordnance
 var bots
 var rules_clock_ms := 0
+var bot_difficulty := 0
+var pending_team_peers: Dictionary = {}
+var choosing_team := false
 
 func _init(owner) -> void:
 	game = owner
@@ -60,6 +63,9 @@ func create_room(name: String, nick: String, port: int = 42042, battle_mode: Str
 		return
 	enabled = true
 	mode = battle_mode
+	bot_difficulty = 0
+	pending_team_peers.clear()
+	choosing_team = false
 	game.core.reset_run()
 	if mode == "pvp":
 		net.configure_pvp_room()
@@ -101,6 +107,8 @@ func leave() -> void:
 	generations.clear()
 	ordnance.clear()
 	bots.clear()
+	pending_team_peers.clear()
+	choosing_team = false
 
 func world_ready(local_player) -> void:
 	target_frame = -1
@@ -158,6 +166,9 @@ func start_battle() -> void:
 		epoch += 1
 		ready_peers.clear()
 		game.start_pvp()
+		for id in pending_team_peers:
+			game.core.coop_loading(int(id))
+		if not pending_team_peers.is_empty(): sync_stats()
 	else:
 		epoch += 1
 		ready_peers.clear()
@@ -179,8 +190,12 @@ func process(delta: float) -> void:
 					room_name = str(data.get("name", room_name))
 					mode = str(data.get("mode", "coop"))
 				if client_epoch < 0:
-					game.state = "lobby"
-					game.hud.show_lan_lobby()
+					if mode == "pvp" and data is Dictionary and bool(data.get("playing", false)):
+						game.state = "connecting"
+						game.hud.show_lan_connecting(room_name)
+					else:
+						game.state = "lobby"
+						game.hud.show_lan_lobby()
 				request("ready", 1 if client_epoch >= 0 else 0)
 			"peer_join":
 				refresh_members()
@@ -191,6 +206,7 @@ func process(delta: float) -> void:
 						net.send_event("lobby_pvp", JSON.stringify(pvp_state))
 					if game.state in ["playing", "team_wipe", "victory", "pvp_finished"]:
 						game.core.coop_loading(int(event.peer))
+						if mode == "pvp" and game.state == "playing": pending_team_peers[int(event.peer)] = true
 						spawn_player(int(event.peer), data.name)
 						game.hud.toast(data.name + " 加入小队", Color(0.3, 0.9, 0.8), 3)
 				if game.state == "lobby":
@@ -202,6 +218,7 @@ func process(delta: float) -> void:
 					players[id].queue_free()
 					players.erase(id)
 				inputs.erase(id)
+				pending_team_peers.erase(id)
 				stats.erase(id)
 				refresh_members()
 				if host() and mode == "pvp":
@@ -240,6 +257,9 @@ func process(delta: float) -> void:
 					mode = "pvp"
 					apply_pvp(data)
 					if game.state == "lobby": game.hud.show_lan_lobby()
+			"join_team_result":
+				if not host() and data is Dictionary and int(data.id) == local_id() and not bool(data.ok):
+					game.hud.toast("该队真人已满，请选择另一队", Color(1, 0.6, 0.2), 3)
 			"detonate":
 				if not host() and data is Dictionary: ordnance.show_detonation(data)
 			"assault_break":
@@ -336,6 +356,17 @@ func request(kind: String, arg: int = 0, yaw: float = 0.0, pitch: float = 0.0) -
 		net.send_action(kind, arg, action_sequence, yaw, pitch)
 
 func apply_action(id: int, action: Dictionary) -> void:
+	if action.kind == "join_team":
+		if mode != "pvp" or game.state != "playing" or not pending_team_peers.has(id): return
+		var accepted: bool = game.core.pvp_join_team(id, int(action.arg))
+		if accepted:
+			pending_team_peers.erase(id)
+			refresh_pvp()
+			place_pvp_player(id)
+			sync_stats()
+		net.send_event("join_team_result", JSON.stringify({"id": id, "ok": accepted}))
+		net.send_snapshot(JSON.stringify(make_snapshot()), id)
+		return
 	if action.kind == "team":
 		if mode == "pvp" and game.state == "lobby" and game.core.pvp_team(id, int(action.arg)):
 			refresh_pvp()
@@ -348,7 +379,7 @@ func apply_action(id: int, action: Dictionary) -> void:
 			if mode == "pvp": net.send_event("lobby_pvp", JSON.stringify(pvp_state))
 		if int(action.arg) == 1:
 			ready_peers[id] = true
-			game.core.coop_activate(id)
+			if not pending_team_peers.has(id): game.core.coop_activate(id)
 			sync_stats()
 		if game.state in ["playing", "team_wipe", "victory", "pvp_finished"]:
 			net.send_snapshot(JSON.stringify(make_snapshot()), id)
@@ -432,12 +463,14 @@ func make_snapshot() -> Dictionary:
 	var valves: Array = []
 	for terminal in game.level.terminals: valves.append(terminal.activated)
 	var broken_brushes: Array = game.level.snapshot_brushes() if game.level.has_method("snapshot_brushes") else []
-	return {"epoch": epoch, "tick": snapshot_tick, "mode": mode, "pvp": pvp_state, "battle": game.battle.snapshot(), "ordnance": ordnance.snapshot(), "assault_broken": broken_brushes, "start_stage": start_stage, "stage": game.stage_index, "wave": game.wave, "state": game.state, "time": game.survival_time, "spawn_left": game.spawn_left, "alive": game.alive, "next_wave": game.next_wave, "level": game.level_number, "xp": game.xp, "xp_needed": game.xp_needed, "kills": game.kills, "headshots": game.headshots, "objective": game.objective_count, "valves": valves, "players": pawn_states, "enemies": enemies, "hazards": hazards, "pickups": pickups}
+	return {"epoch": epoch, "tick": snapshot_tick, "mode": mode, "pvp": pvp_state, "team_selection": pending_team_peers.keys(), "battle": game.battle.snapshot(), "ordnance": ordnance.snapshot(), "assault_broken": broken_brushes, "start_stage": start_stage, "stage": game.stage_index, "wave": game.wave, "state": game.state, "time": game.survival_time, "spawn_left": game.spawn_left, "alive": game.alive, "next_wave": game.next_wave, "level": game.level_number, "xp": game.xp, "xp_needed": game.xp_needed, "kills": game.kills, "headshots": game.headshots, "objective": game.objective_count, "valves": valves, "players": pawn_states, "enemies": enemies, "hazards": hazards, "pickups": pickups}
 
 func apply_snapshot(s: Dictionary) -> void:
 	if int(s.tick) <= last_tick and int(s.epoch) == client_epoch: return
 	last_tick = int(s.tick)
 	mode = str(s.get("mode", "coop"))
+	var was_choosing := choosing_team
+	choosing_team = mode == "pvp" and s.get("team_selection", []).any(func(id): return int(id) == local_id())
 	if mode == "pvp": apply_pvp(s.get("pvp", {}))
 	start_stage = clampi(int(s.get("start_stage", 0)), 0, game.STAGE_NAMES.size() - 1)
 	var rebuild: bool = client_epoch != int(s.epoch) or game.stage_index != int(s.stage)
@@ -445,8 +478,9 @@ func apply_snapshot(s: Dictionary) -> void:
 		client_epoch = int(s.epoch)
 		game.stage_index = int(s.stage)
 		game._build_run()
-		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
-		game.hud.hide_overlay()
+		if not choosing_team:
+			Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
+			game.hud.hide_overlay()
 	if game.level.has_method("apply_brushes"): game.level.apply_brushes(s.get("assault_broken", []))
 	game.wave = int(s.wave)
 	game.survival_time = s.time
@@ -543,7 +577,10 @@ func apply_snapshot(s: Dictionary) -> void:
 	game.battle.apply_snapshot(s.get("battle", {}))
 	if mode == "pvp": ordnance.apply_snapshot(s.get("ordnance", []))
 	game.state = s.state
-	if game.state != old_state:
+	if choosing_team and game.state == "playing":
+		if rebuild or not was_choosing or not game.hud.menu.visible: game.hud.show_join_team()
+		Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+	elif game.state != old_state or was_choosing:
 		if game.state == "team_wipe": game.hud.show_death(); Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		elif game.state == "victory": game.hud.show_victory(); Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 		elif game.state == "pvp_finished": game.hud.show_pvp_result(); Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
@@ -585,7 +622,9 @@ static func unvec(v: Array) -> Vector3:
 
 func refresh_pvp() -> void:
 	var data = JSON.parse_string(game.core.pvp_json())
-	if data is Dictionary: apply_pvp(data)
+	if data is Dictionary:
+		data["bot_difficulty"] = bot_difficulty
+		apply_pvp(data)
 	if host() and game.state in ["playing", "pvp_finished"]:
 		for id in players.keys():
 			if id >= 4000000000 and not fighters.has(id):
@@ -603,11 +642,18 @@ func set_fill_bots(value: bool) -> void:
 
 func apply_pvp(data: Dictionary) -> void:
 	pvp_state = data
+	bot_difficulty = clampi(int(data.get("bot_difficulty", 0)), 0, 2)
 	fighters.clear()
 	for key in data.get("fighters", {}):
 		fighters[int(key)] = data.fighters[key]
 	for id in players:
 		players[id].set_team(int(fighters.get(id, {}).get("team", 0)))
+
+func set_bot_difficulty(index: int) -> void:
+	if not host() or game.state != "lobby" or mode != "pvp": return
+	bot_difficulty = clampi(index, 0, 2)
+	refresh_pvp()
+	net.send_event("lobby_pvp", JSON.stringify(pvp_state))
 
 func place_pvp_player(id: int) -> void:
 	if not players.has(id) or not fighters.has(id): return

@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const PROTOCOL: u16 = 1;
-const BUILD: &str = "1.0.0-lan";
+const BUILD: &str = "1.0.0-lan-r2";
 const LIMIT: usize = 1_048_576;
 // First-use shader compilation and scene loading can stall the engine thread.
 // Leave enough time for those stalls; explicit ENet disconnects remain immediate.
@@ -72,6 +72,7 @@ pub enum ActionKind {
     Ready,
     Restart,
     Team,
+    JoinTeam,
     Grenade,
 }
 #[derive(Clone, Debug, Serialize, Deserialize)]
