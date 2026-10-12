@@ -129,7 +129,16 @@ func _docks() -> void:
 	var steel := Forge.material(Color(0.2, 0.27, 0.28), 0.65, 0, 0.72)
 	var water := ShaderMaterial.new()
 	water.shader = preload("res://shaders/harbor_water.gdshader")
-	Forge.box(self, Vector3(0, -0.55, 0), Vector3(1600, 0.03, 1600), water).cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	var water_mesh := PlaneMesh.new()
+	water_mesh.size = Vector2(1800, 1800)
+	water_mesh.subdivide_width = 180
+	water_mesh.subdivide_depth = 180
+	var water_vis := MeshInstance3D.new()
+	water_vis.mesh = water_mesh
+	water_vis.material_override = water
+	water_vis.position = Vector3(0, -0.55, 0)
+	water_vis.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(water_vis)
 	for x in [4, 10, 16, 22]:
 		_deck(Rect2i(x, 2, 3, 24), 0, deck)
 	_deck(Rect2i(1, 15, 27, 2), 0, deck)

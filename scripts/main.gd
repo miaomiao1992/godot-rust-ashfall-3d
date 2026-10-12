@@ -43,6 +43,8 @@ var menu_time := 0.0
 var rng := RandomNumberGenerator.new()
 var ambience: WorldEnvironment
 var key_light: DirectionalLight3D
+var pvp_time_of_day: float = 10.0
+var pvp_time_speed: float = 0.05
 var debug_stats := false
 var core
 var stage_index := 0
@@ -144,9 +146,14 @@ func _setup_environment() -> void:
 	add_child(ambience)
 	key_light = DirectionalLight3D.new()
 	key_light.shadow_enabled = true
-	key_light.shadow_bias = 0.09
-	key_light.shadow_normal_bias = 0.75
-	key_light.directional_shadow_max_distance = 72
+	key_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+	key_light.directional_shadow_max_distance = 180.0
+	key_light.directional_shadow_split_1 = 0.08
+	key_light.directional_shadow_split_2 = 0.22
+	key_light.directional_shadow_split_3 = 0.50
+	key_light.shadow_bias = 0.02
+	key_light.shadow_normal_bias = 1.0
+	key_light.shadow_blur = 1.2
 	add_child(key_light)
 
 func _build_run() -> void:
@@ -277,6 +284,8 @@ func _begin_wave() -> void:
 
 func _process(delta: float) -> void:
 	if lan != null: lan.process(delta)
+	if is_pvp():
+		_update_pvp_celestial(delta)
 	if state in ["menu", "lobby", "connecting"]:
 		menu_time += delta
 		player.camera.global_position = level.menu_camera + Vector3(sin(menu_time * 0.07) * 3, 0, 0)
@@ -578,17 +587,94 @@ func _change_stage(index: int) -> void:
 func _style_environment() -> void:
 	var env := ambience.environment
 	if is_pvp():
-		env.fog_enabled = false
-		env.ambient_light_color = Color(0.72, 0.78, 0.86)
-		env.ambient_light_energy = 0.85
-		var panorama := PanoramaSkyMaterial.new()
-		panorama.panorama = load("res://assets/skies/harbor_overcast.png")
-		env.sky.sky_material = panorama
-		env.background_energy_multiplier = 0.85
-		key_light.rotation_degrees = Vector3(-55, -35, 0)
-		key_light.light_color = Color(0.92, 0.94, 1)
-		key_light.light_energy = 1.1
+		env.fog_enabled = true
+		env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+		env.ambient_light_sky_contribution = 0.72
+		env.reflected_light_source = Environment.REFLECTION_SOURCE_SKY
+		env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+		env.tonemap_exposure = 1.08
+		env.fog_density = 0.0016
+		env.fog_sky_affect = 0.35
+		var sky_mat := ProceduralSkyMaterial.new()
+		env.sky.sky_material = sky_mat
+		key_light.directional_shadow_mode = DirectionalLight3D.SHADOW_PARALLEL_4_SPLITS
+		key_light.directional_shadow_max_distance = 180.0
+		key_light.shadow_bias = 0.02
+		key_light.shadow_normal_bias = 1.0
+		key_light.shadow_blur = 1.2
+		key_light.shadow_opacity = 0.92
+		_update_pvp_celestial(0.0)
 		return
+
+func _update_pvp_celestial(delta: float) -> void:
+	if not is_instance_valid(ambience) or not is_instance_valid(key_light): return
+	var env := ambience.environment
+	if env == null: return
+	var sky_mat: ProceduralSkyMaterial = env.sky.sky_material as ProceduralSkyMaterial
+	if sky_mat == null:
+		sky_mat = ProceduralSkyMaterial.new()
+		env.sky.sky_material = sky_mat
+
+	pvp_time_of_day = fposmod(pvp_time_of_day + delta * pvp_time_speed, 24.0)
+	var H: float = pvp_time_of_day
+
+	# 24-hour celestial orbit (Dawn: 6:00, Noon: 12:00, Sunset: 18:00, Midnight: 0:00)
+	var sun_theta: float = (H - 6.0) / 12.0 * PI
+	var sun_sin: float = sin(sun_theta)
+	var sun_cos: float = cos(sun_theta)
+	var sun_azimuth: float = (H / 24.0) * TAU + 0.45
+	var sun_dir := Vector3(-cos(sun_azimuth) * sun_cos, -sun_sin, -sin(sun_azimuth) * sun_cos).normalized()
+
+	var moon_theta: float = (fposmod(H + 12.0, 24.0) - 6.0) / 12.0 * PI
+	var moon_sin: float = sin(moon_theta)
+	var moon_cos: float = cos(moon_theta)
+	var moon_azimuth: float = sun_azimuth + PI
+	var moon_dir := Vector3(-cos(moon_azimuth) * moon_cos, -moon_sin, -sin(moon_azimuth) * moon_cos).normalized()
+
+	var day_factor: float = clampf(sun_sin * 3.5, 0.0, 1.0)
+	var night_factor: float = clampf(moon_sin * 3.5, 0.0, 1.0)
+	var sunset_factor: float = clampf(1.0 - absf(H - 18.0) * 0.8, 0.0, 1.0) + clampf(1.0 - absf(H - 6.0) * 0.8, 0.0, 1.0)
+
+	# Celestial Key Light (Sun vs Moon)
+	if sun_sin >= -0.05:
+		# Daytime Sun
+		key_light.look_at_from_position(Vector3.ZERO, sun_dir, Vector3.UP if absf(sun_dir.y) < 0.99 else Vector3.FORWARD)
+		var noon_col := Color(1.0, 0.96, 0.91)
+		var golden_col := Color(1.0, 0.65, 0.32)
+		key_light.light_color = golden_col.lerp(noon_col, clampf(sun_sin * 1.8, 0.0, 1.0))
+		key_light.light_energy = lerpf(0.15, 1.35, clampf(sun_sin * 2.0, 0.0, 1.0))
+	else:
+		# Nighttime Moon
+		key_light.look_at_from_position(Vector3.ZERO, moon_dir, Vector3.UP if absf(moon_dir.y) < 0.99 else Vector3.FORWARD)
+		key_light.light_color = Color(0.68, 0.80, 1.0)
+		key_light.light_energy = lerpf(0.08, 0.38, clampf(moon_sin * 2.0, 0.0, 1.0))
+
+	# Dynamic Atmosphere & Sky GI Radiance
+	var day_sky_top := Color(0.20, 0.45, 0.85)
+	var day_sky_hor := Color(0.68, 0.82, 0.94)
+	var sunset_top := Color(0.18, 0.22, 0.48)
+	var sunset_hor := Color(0.96, 0.48, 0.22)
+	var night_sky_top := Color(0.015, 0.022, 0.055)
+	var night_sky_hor := Color(0.06, 0.09, 0.16)
+
+	var cur_sky_top := night_sky_top.lerp(day_sky_top, day_factor).lerp(sunset_top, sunset_factor * 0.7)
+	var cur_sky_hor := night_sky_hor.lerp(day_sky_hor, day_factor).lerp(sunset_hor, sunset_factor)
+
+	sky_mat.sky_top_color = cur_sky_top
+	sky_mat.sky_horizon_color = cur_sky_hor
+	sky_mat.ground_bottom_color = Color(0.02, 0.03, 0.04).lerp(Color(0.18, 0.22, 0.26), day_factor)
+	sky_mat.ground_horizon_color = cur_sky_hor * 0.65
+	sky_mat.sun_angle_max = 28.0
+
+	var day_ambient := Color(0.72, 0.80, 0.92)
+	var sunset_ambient := Color(0.90, 0.62, 0.45)
+	var night_ambient := Color(0.38, 0.48, 0.70)
+	env.ambient_light_color = night_ambient.lerp(day_ambient, day_factor).lerp(sunset_ambient, sunset_factor * 0.6)
+	env.ambient_light_energy = lerpf(0.42, 0.82, day_factor)
+	env.tonemap_exposure = lerpf(1.22, 1.05, day_factor)
+	env.fog_light_color = cur_sky_hor
+	return
+
 	env.fog_enabled = true
 	var colors := [Color(0.28, 0.26, 0.24), Color(0.19, 0.25, 0.29), Color(0.25, 0.06, 0.04)]
 	env.fog_light_color = colors[stage_index]

@@ -68,24 +68,33 @@ func puff(pos: Vector3, direction: Vector3, color: Color, size: float, life: flo
 
 func explosion(pos: Vector3) -> void:
 	burst(pos, Vector3.UP, Color(0.31, 0.25, 0.18), 24, 9)
-	for i in 10:
+	# High velocity burning shrapnel sparks with gravity and scatter
+	for i in 18:
+		var s_dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.25, 1.4), rng.randf_range(-1, 1)).normalized()
+		var s_mesh := Forge.box(self, pos, Vector3.ONE * 0.05, Forge.material(Color(1.0, 0.72, 0.18), 0, 5.0))
+		s_mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		items.append({"node": s_mesh, "vel": s_dir * rng.randf_range(12.0, 24.0), "life": rng.randf_range(0.35, 0.75), "gravity": 20.0})
+	# Volumetric buoyant rising smoke puffs
+	for i in 14:
 		var direction := Vector3(rng.randf_range(-1, 1), rng.randf_range(0.15, 1), rng.randf_range(-1, 1)).normalized()
-		puff(pos + direction * 0.3, direction * 3, Color(0.19, 0.17, 0.14), rng.randf_range(0.8, 1.5), rng.randf_range(1.8, 3.4))
-	var glow := Forge.sphere(self, pos, 0.7, Forge.material(Color(1, 0.53, 0.14), 0, 4))
-	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	items.append({"node": glow, "vel": Vector3.ZERO, "life": 0.12, "gravity": 0.0, "fresh": true})
+		puff(pos + direction * 0.4, direction * 2.2 + Vector3.UP * 3.2, Color(0.14, 0.13, 0.12), rng.randf_range(1.4, 2.8), rng.randf_range(1.8, 3.2))
+	# High-energy detonation flash
 	var light := OmniLight3D.new()
-	light.position = pos
-	light.light_color = Color(1, 0.55, 0.22)
-	light.light_energy = 5
-	light.omni_range = 13
+	light.position = pos + Vector3.UP * 0.3
+	light.light_color = Color(1.0, 0.72, 0.35)
+	light.light_energy = 16.0
+	light.omni_range = 18.0
 	add_child(light)
-	items.append({"node": light, "vel": Vector3.ZERO, "life": 0.16, "gravity": 0.0, "fresh": true})
+	items.append({"node": light, "vel": Vector3.ZERO, "life": 0.22, "gravity": 0.0, "fresh": true})
+	# Expanding core fireball
+	var glow := Forge.sphere(self, pos + Vector3.UP * 0.2, 0.85, Forge.material(Color(1.0, 0.48, 0.08), 0, 5))
+	glow.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	items.append({"node": glow, "vel": Vector3.UP * 0.8, "life": 0.16, "gravity": 0.0, "fresh": true})
 	if is_instance_valid(game.player):
 		var distance: float = game.player.camera.global_position.distance_to(pos)
-		if distance < 22:
+		if distance < 26:
 			var hit := get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(pos, game.player.camera.global_position, 1))
-			game.player.trauma = maxf(game.player.trauma, (1 - distance / 22) * (0.9 if hit.is_empty() else 0.25))
+			game.player.trauma = maxf(game.player.trauma, (1.0 - distance / 26.0) * (1.1 if hit.is_empty() else 0.45))
 
 func corpse(pos: Vector3, color: Color, scale_factor: float, direction: Vector3) -> void:
 	var body := Node3D.new()

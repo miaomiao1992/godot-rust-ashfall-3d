@@ -168,7 +168,10 @@ func explosion(pos: Vector3) -> Array:
 		if transmission <= 0: continue
 		var falloff := (1 - distance / 9) * transmission
 		prop.sleeping = false
-		prop.apply_impulse((offset.normalized() + Vector3.UP * 0.5) * minf(prop.mass, 18) * 12 * falloff, Vector3(0, -0.1, 0.08))
+		var blast_dir := (offset.normalized() + Vector3.UP * 0.75).normalized()
+		var impulse_mag := minf(prop.mass, 24.0) * 18.0 * falloff
+		var contact_offset := Vector3(rng.randf_range(-0.15, 0.15), -0.2, rng.randf_range(-0.15, 0.15))
+		prop.apply_impulse(blast_dir * impulse_mag, contact_offset)
 		prop.hurt(130 * falloff)
 	return scars
 

@@ -5,7 +5,7 @@ config_version=5
 config/name="ASHFALL · 余烬禁区 LAN"
 run/main_scene="res://main.tscn"
 config/features=PackedStringArray("4.7", "GL Compatibility")
-config/version="0.5.0"
+config/version="0.6.0"
 config/description="Rust-powered LAN survival and 1v1-5v5 warehouse PvP with optional bots, scoped sniper rifles and combat physics"
 
 [display]

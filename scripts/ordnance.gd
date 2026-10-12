@@ -13,16 +13,31 @@ func clear() -> void:
 		if is_instance_valid(item.node): item.node.queue_free()
 	items.clear()
 
-func _visual(kind: int, smoke: bool = false) -> MeshInstance3D:
-	var color: Color = [Color(0.3, 0.4, 0.18), Color(0.7, 0.78, 0.85), Color(0.4, 0.47, 0.5)][kind]
-	var mat := Forge.material(color, 0.3)
+func _visual(kind: int, smoke: bool = false) -> Node3D:
 	if smoke:
-		mat = Forge.material(Color(0.44, 0.49, 0.52, 0.94), 0, 0, 1)
+		var mat := Forge.material(Color(0.44, 0.49, 0.52, 0.94), 0, 0, 1)
 		mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	var node := Forge.sphere(game.world, Vector3.ZERO, 4.5 if smoke else 0.12, mat)
-	node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
-	return node
+		var smoke_node := Forge.sphere(game.world, Vector3.ZERO, 4.5, mat)
+		smoke_node.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		return smoke_node
+	var root := Node3D.new()
+	game.world.add_child(root)
+	var body_col: Color = [Color(0.24, 0.35, 0.16), Color(0.72, 0.78, 0.85), Color(0.38, 0.44, 0.48)][kind]
+	var body_mat := Forge.material(body_col, 0.25, 0, 0.55)
+	var steel_mat := Forge.material(Color(0.18, 0.20, 0.22), 0.85, 0, 0.35)
+	var pin_mat := Forge.material(Color(0.85, 0.88, 0.92), 0.90, 0, 0.2)
+	# Segmented cylindrical grenade canister
+	var body := Forge.cylinder(root, Vector3(0, 0, 0), 0.062, 0.15, body_mat)
+	body.rotation.x = PI / 2
+	# Neck and threaded fuze
+	var fuze := Forge.cylinder(root, Vector3(0, 0.10, 0), 0.026, 0.05, steel_mat)
+	fuze.rotation.x = PI / 2
+	# Curved safety lever
+	Forge.box(root, Vector3(0.042, 0.04, 0), Vector3(0.012, 0.14, 0.03), steel_mat)
+	# Steel pull ring
+	Forge.box(root, Vector3(-0.038, 0.10, 0), Vector3(0.008, 0.035, 0.035), pin_mat)
+	return root
 
 func throw_grenade(p, kind: int, yaw: float, pitch: float) -> void:
 	var direction := Basis(Vector3.UP, yaw) * Basis(Vector3.RIGHT, clampf(pitch, -1.5, 1.5)) * Vector3.FORWARD
@@ -30,7 +45,23 @@ func throw_grenade(p, kind: int, yaw: float, pitch: float) -> void:
 	var start: Vector3 = origin + direction * 0.5
 	var hit: Dictionary = game.world.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(origin, start, 1))
 	if not hit.is_empty(): start = hit.position + hit.normal * 0.15
-	var item := {"node": _visual(kind), "owner": p.peer_id, "kind": kind, "pos": start, "vel": direction * 17 + Vector3.UP * 3, "life": 2.0, "smoke": false}
+	var p_vel: Vector3 = p.velocity * 0.45 if "velocity" in p else Vector3.ZERO
+	var throw_vel: Vector3 = direction * 19.5 + Vector3.UP * 3.2 + p_vel
+	var rng: RandomNumberGenerator = game.rng if is_instance_valid(game) and "rng" in game else RandomNumberGenerator.new()
+	var spin := Vector3(rng.randf_range(6.0, 12.0), rng.randf_range(-3.0, 3.0), rng.randf_range(4.0, 8.0))
+	var item := {
+		"node": _visual(kind),
+		"owner": p.peer_id,
+		"kind": kind,
+		"pos": start,
+		"vel": throw_vel,
+		"rot": Vector3.ZERO,
+		"spin": spin,
+		"life": 2.2,
+		"smoke": false,
+		"on_ground": false,
+		"bounces": 0
+	}
 	item.node.position = start
 	items[next_id] = item
 	next_id += 1
@@ -45,14 +76,38 @@ func process(delta: float) -> void:
 		item.life -= delta
 		for step in steps:
 			if item.smoke: continue
-			item.vel += Vector3.DOWN * 16 * dt
+			item.vel += Vector3.DOWN * 15.0 * dt
+			item.vel *= (1.0 - 0.02 * dt)
 			var end: Vector3 = item.pos + item.vel * dt
 			var hit: Dictionary = game.world.get_world_3d().direct_space_state.intersect_ray(PhysicsRayQueryParameters3D.create(item.pos, end, 1))
-			if hit.is_empty(): item.pos = end
+			if hit.is_empty():
+				item.pos = end
+				item.on_ground = false
+				item.rot += item.spin * dt
 			else:
-				item.pos = hit.position + hit.normal * 0.13
-				item.vel = item.vel.bounce(hit.normal) * 0.45
+				var normal: Vector3 = hit.normal
+				var v_normal: float = item.vel.dot(normal)
+				var v_tangent: Vector3 = item.vel - normal * v_normal
+				item.pos = hit.position + normal * 0.08
+				if absf(v_normal) > 1.2:
+					var restitution: float = 0.45
+					item.vel = v_tangent * 0.82 - normal * (v_normal * restitution)
+					var rng: RandomNumberGenerator = game.rng if is_instance_valid(game) and "rng" in game else RandomNumberGenerator.new()
+					item.spin = Vector3(rng.randf_range(-8.0, 8.0), rng.randf_range(-6.0, 6.0), rng.randf_range(-8.0, 8.0))
+					item.bounces += 1
+					if is_instance_valid(game.sound):
+						game.sound.positional("metal_hit", item.pos, -12)
+				else:
+					item.on_ground = true
+					item.vel = v_tangent
+					var friction: float = 4.8 * dt
+					item.vel = item.vel.move_toward(Vector3.ZERO, friction)
+					var roll_speed: float = item.vel.length()
+					if roll_speed > 0.05:
+						var roll_axis := normal.cross(item.vel.normalized())
+						item.rot += roll_axis * (roll_speed / 0.08) * dt
 		item.node.position = item.pos
+		item.node.rotation = item.rot
 		if item.life <= 0:
 			if not item.smoke:
 				_detonate(item)
@@ -90,7 +145,10 @@ func _detonate(item: Dictionary) -> void:
 		if distance > (9.0 if item.kind == 0 else 18.0): continue
 		if item.kind == 0:
 			var transmission: float = transmission_by_peer.get(p.peer_id, 0.0)
-			if transmission > 0: game.lan.hit_player(int(item.owner), p.peer_id, 150 * (1 - distance / 9.0) * transmission, false)
+			if transmission > 0:
+				game.lan.hit_player(int(item.owner), p.peer_id, 150 * (1 - distance / 9.0) * transmission, false)
+				var knockback: Vector3 = (target - item.pos).normalized()
+				p.velocity += (knockback + Vector3.UP * 0.4).normalized() * (16.0 * (1.0 - distance / 9.0) * transmission)
 		else:
 			if not exposed(item.pos, target): continue
 			var facing: float = (-p.camera.global_basis.z).dot((item.pos - target).normalized())

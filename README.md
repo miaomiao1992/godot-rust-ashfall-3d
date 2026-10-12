@@ -1,7 +1,7 @@
 # ASHFALL · 余烬禁区
 
-Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.5.0 LAN 仓库 PvP、可选机器人与战斗物理版**。
-v0.5.0 发布源码同步至 `main` 与 `feature/lan-coop`；历史单机稳定包保留为 v0.2.1。
+Godot 4.7 + Rust GDExtension 的 **3D 第一人称末日生存射击游戏，v0.6.0 LAN CS_ASSAULT 突击仓库、真实海水、昼夜天空全局光照与 CS 物理手雷版**。
+v0.6.0 发布源码同步至 `main` 与 `feature/lan-coop`；历史单机稳定包保留为 v0.2.1。
 完整挑战包括三个固定设计的关卡、九波尸潮、三个关底 Boss，以及成长解锁的六种武器。
 
 ## 场景预览
@@ -11,10 +11,14 @@ v0.5.0 发布源码同步至 `main` 与 `feature/lan-coop`；历史单机稳定�
 | ![断桥高架第一人称](tests/previews/01-sector.png) | ![沉没船坞第一人称](tests/previews/02-sector.png) | ![熔心实验场第一人称](tests/previews/03-sector.png) |
 | ![折线悬桥俯视](tests/previews/01-layout.png) | ![梳齿码头俯视](tests/previews/02-layout.png) | ![环形大厅俯视](tests/previews/03-layout.png) |
 
+| CS_ASSAULT 仓库日间 | CS_ASSAULT 仓库夜战 | CS 风格手持手雷 |
+|---|---|---|
+| ![仓库日间天窗日光](tests/previews/32-assault-daytime.png) | ![仓库月夜冷光](tests/previews/33-assault-night-moonlight.png) | ![第一人称手持手雷](tests/previews/35-grenade-in-hand.png) |
+
 ## Windows 64 位游玩
 
-**下载局域网版：[Windows64 LAN v0.5.0](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.5.0-lan)。**
-本地发行版：`dist/ASHFALL-LAN-Windows64-v0.5.0.zip`。完整解压后运行 `ASHFALL-LAN.exe`。
+**下载局域网版：[Windows64 LAN v0.6.0](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.6.0-lan)。**
+本地发行版：`dist/ASHFALL-LAN-Windows64-v0.6.0.zip`。完整解压后运行 `ASHFALL-LAN.exe`。
 原单机稳定版：[Windows v0.2.1 Release](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.2.1)。
 
 1. 将 ZIP 完整解压到任意文件夹。
@@ -27,8 +31,9 @@ v0.5.0 发布源码同步至 `main` 与 `feature/lan-coop`；历史单机稳定�
 
 | 版本 | 状态 | 主要变化 | 发行包／说明 |
 |---|---|---|---|
-| **v0.5.0 LAN** | **当前版本** | 1v1–5v5 仓库 PvP、可选补位机器人、可进入管道／屋顶、4×／8×狙击镜、子弹穿透／隔墙爆炸、物理破坏与战斗痕迹 | [Windows 下载](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.5.0-lan) · [完整更新说明](docs/releases/v0.5.0-lan.md) |
-| v0.4.0 | 源码迭代，功能包含于 v0.5.0 | 高架、船坞、实验场环境全面重构，新增场景细节与尸体物理 | [场景优化源码](https://github.com/xiejunlei/ashfall-3d/tree/abde48c)，无独立 GitHub 发行包 |
+| **v0.6.0 LAN** | **当前版本** | CS_ASSAULT 突击仓库重构、真实 PBR 扫描贴图、第 2 关物理海水、24h 昼夜日月光影／天窗阴影／Sky GI、CS 物理手雷手持／滚动／爆轰 | [Windows 下载](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.6.0-lan) · [完整更新说明](docs/releases/v0.6.0-lan.md) |
+| v0.5.0 LAN | 历史预发布包 | 1v1–5v5 仓库 PvP、可选补位机器人、可进入管道／屋顶、4×／8×狙击镜、子弹穿透／隔墙爆炸、物理破坏与战斗痕迹 | [Windows 下载](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.5.0-lan) · [更新说明](docs/releases/v0.5.0-lan.md) |
+| v0.4.0 | 源码迭代，功能包含于后续版本 | 高架、船坞、实验场环境全面重构，新增场景细节与尸体物理 | [场景优化源码](https://github.com/xiejunlei/ashfall-3d/tree/abde48c)，无独立 GitHub 发行包 |
 | v0.3.4 LAN | 历史预发布包 | 房主大厅选起始地图、桥面闪烁修复、短曳光、六类尸体真实贴地 | [Windows 下载](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.3.4-lan) · [更新说明](docs/release-v0.3.4-lan.md) |
 | v0.3.3 | 源码迭代，功能包含于后续版本 | 队友武器／持枪／俯仰同步、本机射击预测、地面材质与特效性能修复 | 详情见下方 v0.3.3 小节，无独立 GitHub 发行包 |
 | v0.3.2 LAN | 历史预发布包 | 独立幸存者士兵模型、待机／走／跑动画，玩家与怪物外观分离 | [Windows 下载](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.3.2-lan) · [更新说明](docs/releases/v0.3.2-lan.md) |
@@ -36,11 +41,17 @@ v0.5.0 发布源码同步至 `main` 与 `feature/lan-coop`；历史单机稳定�
 | v0.3.0 LAN | 初始合作源码阶段 | Rust ENet 网络、房间发现、四人合作、独立角色状态、倒地救援和热加入 | [开发说明](docs/releases/v0.3.0-lan.md)，无独立 GitHub 发行包 |
 | v0.2.1 | 历史单机稳定包 | 三关九波生存、Boss、成长武装，以及第三关卡关／越界修复 | [Windows 下载](https://github.com/xiejunlei/ashfall-3d/releases/tag/v0.2.1) · [更新说明](docs/releases/v0.2.1.md) |
 
-联机请统一使用 **v0.5.0**；历史发行包可在 [全部 Releases](https://github.com/xiejunlei/ashfall-3d/releases) 查找。
+联机请统一使用 **v0.6.0**；历史发行包可在 [全部 Releases](https://github.com/xiejunlei/ashfall-3d/releases) 查找。
 
 ## 局域网合作
 
-### v0.5.0：仓库交锋 PvP
+### v0.6.0：CS_ASSAULT 仓库与环境物理升级
+
+- **经典 CS_ASSAULT 突击仓库**：完整重建突击大卷帘门、混凝土装卸作业月台、中央大水泥斜坡、后墙四座红色货位、二楼悬空猫道平台与 CCTV 监控室、天花板纵横三角钢桁架与悬吊荧光吊灯箱、双排采光玻璃天窗、以及贯通屋顶与室内的经典通风管道系统。
+- **Poly Haven CC0 真实 PBR 扫描贴图**：路面沥青、混凝土月台、波纹钢板、集装箱铁皮、卷帘门、木箱等真实扫描法线与粗糙度，全场景三向投影映射杜绝拉伸。
+- **第 2 关物理海水模拟**：180×180 细分高精曲面，4 组物理 Gerstner 摆线波模拟真实频散动力学，结合多频水表张力微法线、Schlick 菲涅尔反射、深海 Beer-Lambert 吸收与波峰背光次表面散射（SSS）、浪尖白冠破浪与立柱碎浪。
+- **PvP 昼夜交替与天空全局光照**：24 小时连续天体轨迹，白天太阳东升西落、黄昏夕阳金红霞光、夜间冷银月亮升起；4 级 PSSM 级联阴影穿透屋顶采光天窗投下移动钢架构剪影；环境光采用 ProceduralSky 半球漫射全局光照（Sky GI）与镜面反射天空球。
+- **CS 风格物理手雷系统**：按 4 或 G（Q 闪光 / C 烟雾）收枪先将手雷切入手中，第一人称显示真实 3D 手雷模型（引信、保险柄与拉环）；鼠标左键全力高抛、右键轻掷滚地雷；真实重力加速度与空中自转，撞击反弹带金属磕碰声，落地后贴地平滑滚动与摩擦减速，2.2 秒引信到期引爆；爆炸强力物理冲击波将箱桶狠掀腾空翻滚，对范围内角色产生物理击退推力，伴随高能白光爆闪、燃烧火花重力飞溅与浓黑升腾烟柱。
 
 当前源码新增主菜单「仓库 PvP」入口，支持 **1v1 至 5v5**。大厅自动平衡红蓝队，也可手动选队；房主可勾选「缺位补机器人」，单人立即开始 1v1，多人时补齐较少的一方。取消勾选后双方真人人数需相等。率先取得 50 杀获胜，10 分钟到时按比分结算，平分为平局。阵亡后 5 秒重生，出生保护 2 秒；关闭友伤，六种武器全部解锁。
 

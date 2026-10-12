@@ -11,7 +11,7 @@ use std::rc::Rc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const PROTOCOL: u16 = 1;
-const BUILD: &str = "0.5.0-lan";
+const BUILD: &str = "0.6.0-lan";
 const LIMIT: usize = 1_048_576;
 // First-use shader compilation and scene loading can stall the engine thread.
 // Leave enough time for those stalls; explicit ENet disconnects remain immediate.
@@ -497,7 +497,7 @@ impl LanSession {
                     if build != BUILD {
                         self.send(
                             sender,
-                            Wire::Reject("版本不匹配，请使用 LAN v0.5.0".into()),
+                            Wire::Reject("版本不匹配，请使用 LAN v0.6.0".into()),
                             true,
                         );
                         return;

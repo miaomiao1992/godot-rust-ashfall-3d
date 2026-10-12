@@ -196,7 +196,13 @@ func _paint() -> void:
 	if game.is_pvp():
 		var f: Dictionary = game.lan.fighters.get(p.peer_id, {})
 		var grenades: Array = f.get("grenades", [0, 0, 0])
-		_text("G 手雷 %d / Q 闪光 %d / C 烟雾 %d" % grenades, Vector2(51, 700), 17, CYAN)
+		var names := ["G 手雷", "Q 闪光", "C 烟雾"]
+		var g_text := ""
+		for gi in 3:
+			var cnt: int = int(grenades[gi]) if gi < grenades.size() else 0
+			var item_str := "【%s %d (准备投掷)】" % [names[gi], cnt] if p.active_grenade == gi else "%s %d" % [names[gi], cnt]
+			g_text += item_str + ("   " if gi < 2 else "")
+		_text(g_text, Vector2(51, 700), 17, Color(1.0, 0.85, 0.25) if p.active_grenade >= 0 else CYAN)
 		_text("击杀 %d / 死亡 %d / 爆头 %d · TAB 比分" % [int(f.get("kills", 0)), int(f.get("deaths", 0)), int(f.get("headshots", 0))], Vector2(51, 727), 15, WHITE)
 		if p.life == "dead": _center("阵亡 · %.1f 秒后重生" % float(f.get("respawn", 0)), 590, 24, ORANGE)
 	elif game.is_lan():
@@ -358,7 +364,7 @@ func show_menu() -> void:
 	_clear_menu()
 	shade.color = Color(0.008, 0.023, 0.03, 0.60)
 	_label("A S H F A L L   /   S U R V I V A L   P R O T O C O L", Vector2(100, 65), 17, CYAN)
-	_label("RUST LAN / v0.5.0", Vector2(1030, 65), 15, MUTED)
+	_label("RUST LAN / v0.6.0", Vector2(1030, 65), 15, MUTED)
 	_label("ASHFALL", Vector2(93, 199), 105, WHITE)
 	_label("余 烬 禁 区", Vector2(104, 333), 43, ORANGE)
 	_label("城市已失守。撤离已取消。", Vector2(108, 419), 24, WHITE)

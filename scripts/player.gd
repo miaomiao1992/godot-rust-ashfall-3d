@@ -63,6 +63,7 @@ var scope_sway := Vector2.ZERO
 var bolt_timer := 0.0
 var bolt_sound_pending := false
 var bolt_handle: Node3D
+var active_grenade: int = -1
 
 func _ready() -> void:
 	WEAPONS = game.core.weapons()
@@ -115,19 +116,34 @@ func _unhandled_input(event: InputEvent) -> void:
 		begin_reload()
 	if event.is_action_pressed("flashlight"):
 		flashlight.visible = not flashlight.visible
+	if active_grenade >= 0:
+		if event.is_action_pressed("fire"):
+			throw_active_grenade(false)
+			return
+		if event.is_action_pressed("aim"):
+			throw_active_grenade(true)
+			return
 	for i in WEAPONS.size():
 		if event.is_action_pressed("weapon_%d" % (i + 1)):
+			cancel_grenade()
 			switch_weapon(i)
 	if event.is_action_pressed("next_weapon"):
-		if weapon_index == SNIPER and aim > 0.8: scope_zoom = 8 if scope_zoom == 4 else 4
+		if active_grenade >= 0: cancel_grenade()
+		elif weapon_index == SNIPER and aim > 0.8: scope_zoom = 8 if scope_zoom == 4 else 4
 		else: cycle_weapon(1)
 	if event.is_action_pressed("previous_weapon"):
-		if weapon_index == SNIPER and aim > 0.8: scope_zoom = 4 if scope_zoom == 8 else 8
+		if active_grenade >= 0: cancel_grenade()
+		elif weapon_index == SNIPER and aim > 0.8: scope_zoom = 4 if scope_zoom == 8 else 8
 		else: cycle_weapon(-1)
 	if game.is_pvp() and life == "alive":
-		for kind in 3:
-			if event.is_action_pressed(["grenade", "flash_grenade", "smoke_grenade"][kind]):
-				game.lan.request("grenade", kind, rotation.y, camera.rotation.x)
+		if event.is_action_pressed("grenade"):
+			select_grenade(0 if active_grenade != 0 else 1)
+		elif event.is_action_pressed("flash_grenade"):
+			select_grenade(1 if active_grenade != 1 else 2)
+		elif event.is_action_pressed("smoke_grenade"):
+			select_grenade(2 if active_grenade != 2 else 0)
+		elif event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_4:
+			select_grenade(0 if active_grenade != 0 else (active_grenade + 1) % 3)
 
 func _physics_process(delta: float) -> void:
 	if game.state != "playing":
@@ -238,6 +254,28 @@ func _build_weapon() -> void:
 	bolt_handle = null
 	for child in rig.get_children():
 		child.free()
+	if active_grenade >= 0:
+		var skin := Forge.material(Color(0.27, 0.19, 0.13))
+		var glove := Forge.material(Color(0.075, 0.09, 0.095))
+		var body_col: Color = [Color(0.24, 0.35, 0.16), Color(0.72, 0.78, 0.85), Color(0.38, 0.44, 0.48)][active_grenade]
+		var body_mat := Forge.material(body_col, 0.25, 0, 0.55)
+		var steel := Forge.material(Color(0.18, 0.20, 0.22), 0.85, 0, 0.35)
+		var pin_mat := Forge.material(Color(0.85, 0.88, 0.92), 0.90, 0, 0.2)
+		var g_root := Node3D.new()
+		g_root.position = Vector3(0.14, -0.10, -0.36)
+		rig.add_child(g_root)
+		var body := Forge.cylinder(g_root, Vector3(0, 0, 0), 0.065, 0.16, body_mat)
+		body.rotation.x = PI / 2
+		var fuze := Forge.cylinder(g_root, Vector3(0, 0.10, 0), 0.028, 0.06, steel)
+		fuze.rotation.x = PI / 2
+		Forge.box(g_root, Vector3(0.045, 0.05, 0), Vector3(0.014, 0.15, 0.035), steel)
+		Forge.box(g_root, Vector3(-0.042, 0.10, 0), Vector3(0.009, 0.04, 0.04), pin_mat)
+		if is_local:
+			Forge.box(g_root, Vector3(0.02, -0.04, 0.04), Vector3(0.13, 0.11, 0.13), glove)
+			Forge.box(g_root, Vector3(0.01, -0.16, 0.12), Vector3(0.13, 0.19, 0.15), skin).rotation.x = -0.45
+			Forge.box(rig, Vector3(-0.14, -0.22, -0.32), Vector3(0.12, 0.11, 0.15), glove)
+			Forge.box(rig, Vector3(-0.18, -0.32, -0.22), Vector3(0.12, 0.19, 0.13), skin).rotation.x = 0.5
+		return
 	var steel := Forge.material(Color(0.11, 0.15, 0.17), 0.8)
 	var dark := Forge.material(Color(0.045, 0.055, 0.064), 0.35)
 	var accent := Forge.material(Color(0.88, 0.4, 0.11), 0.55)
@@ -297,7 +335,45 @@ func _build_weapon() -> void:
 	for visual in rig.find_children("*", "MeshInstance3D", true, false):
 		visual.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 
+func select_grenade(kind: int) -> void:
+	if not game.is_pvp(): return
+	var f: Dictionary = game.lan.fighters.get(peer_id, {})
+	var grenades: Array = f.get("grenades", [0, 0, 0])
+	if kind < 0 or kind >= grenades.size() or int(grenades[kind]) <= 0:
+		for next_kind in 3:
+			var test_k := (kind + next_kind) % 3
+			if int(grenades[test_k]) > 0:
+				kind = test_k
+				break
+	if int(grenades[kind]) <= 0:
+		game.hud.toast("投掷物耗尽", Color(1, 0.4, 0.4), 1.5)
+		return
+	active_grenade = kind
+	game.hud.toast("已切入手雷 · 鼠标左键高抛 / 右键轻掷", Color(0.3, 0.9, 1.0), 1.8)
+	_build_weapon()
+
+func cancel_grenade() -> void:
+	if active_grenade >= 0:
+		active_grenade = -1
+		_build_weapon()
+
+func throw_active_grenade(soft_toss: bool = false) -> void:
+	if active_grenade < 0: return
+	var kind := active_grenade
+	active_grenade = -1
+	var pitch_adj: float = camera.rotation.x + (0.05 if soft_toss else 0.14)
+	game.lan.request("grenade", kind, rotation.y + camera.rotation.y, pitch_adj)
+	shot_timer = 0.5
+	gun_kick = 0.12
+	recoil += 0.05
+	if is_local: game.sound.play("melee", -4)
+	_build_weapon()
+
 func fire(sequence: int = 0) -> void:
+	if active_grenade >= 0:
+		if shot_timer > 0: return
+		throw_active_grenade(false)
+		return
 	if game.is_lan():
 		if life != "alive": return
 		if not game.lan.host():
